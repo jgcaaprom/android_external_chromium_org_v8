@@ -11,17 +11,17 @@
 #include "src/base/atomicops.h"
 #include "src/builtins.h"
 #include "src/contexts.h"
+#include "src/date.h"
 #include "src/execution.h"
 #include "src/frames.h"
-#include "src/date.h"
 #include "src/global-handles.h"
 #include "src/handles.h"
 #include "src/hashmap.h"
 #include "src/heap.h"
 #include "src/optimizing-compiler-thread.h"
 #include "src/regexp-stack.h"
-#include "src/runtime-profiler.h"
 #include "src/runtime.h"
+#include "src/runtime-profiler.h"
 #include "src/zone.h"
 
 namespace v8 {
@@ -1081,6 +1081,9 @@ class Isolate {
   void EnqueueMicrotask(Handle<Object> microtask);
   void RunMicrotasks();
 
+  void SetUseCounterCallback(v8::Isolate::UseCounterCallback callback);
+  void CountUsage(v8::Isolate::UseCounterFeature feature);
+
  private:
   Isolate();
 
@@ -1299,6 +1302,8 @@ class Isolate {
 
   // List of callbacks when a Call completes.
   List<CallCompletedCallback> call_completed_callbacks_;
+
+  v8::Isolate::UseCounterCallback use_counter_callback_;
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;

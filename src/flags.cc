@@ -17,11 +17,11 @@ namespace internal {
 
 // Define all of our flags.
 #define FLAG_MODE_DEFINE
-#include "src/flag-definitions.h"
+#include "src/flag-definitions.h"  // NOLINT
 
 // Define all of our flags default values.
 #define FLAG_MODE_DEFINE_DEFAULTS
-#include "src/flag-definitions.h"
+#include "src/flag-definitions.h"  // NOLINT
 
 namespace {
 
@@ -517,6 +517,7 @@ void FlagList::ResetAllFlags() {
 
 // static
 void FlagList::PrintHelp() {
+  CpuFeatures::Probe(false);
   CpuFeatures::PrintTarget();
   CpuFeatures::PrintFeatures();
 

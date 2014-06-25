@@ -4,8 +4,8 @@
 
 #include "src/v8.h"
 
-#include "src/disassembler.h"
 #include "src/disasm.h"
+#include "src/disassembler.h"
 #include "src/jsregexp.h"
 #include "src/macro-assembler.h"
 #include "src/objects-visiting.h"
@@ -878,7 +878,6 @@ void AccessorPair::AccessorPairVerify() {
   CHECK(IsAccessorPair());
   VerifyPointer(getter());
   VerifyPointer(setter());
-  VerifySmiField(kAccessFlagsOffset);
 }
 
 

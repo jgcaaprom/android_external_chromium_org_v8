@@ -6,10 +6,10 @@
 
 #if V8_TARGET_ARCH_X64
 
-#include "src/lithium-allocator-inl.h"
-#include "src/x64/lithium-x64.h"
-#include "src/x64/lithium-codegen-x64.h"
 #include "src/hydrogen-osr.h"
+#include "src/lithium-allocator-inl.h"
+#include "src/x64/lithium-codegen-x64.h"
+#include "src/x64/lithium-x64.h"
 
 namespace v8 {
 namespace internal {
@@ -331,6 +331,16 @@ void LAccessArgumentsAt::PrintDataTo(StringStream* stream) {
 
 
 int LPlatformChunk::GetNextSpillIndex(RegisterKind kind) {
+  if (kind == DOUBLE_REGISTERS && kDoubleSize == 2 * kPointerSize) {
+    // Skip a slot if for a double-width slot for x32 port.
+    spill_slot_count_++;
+    // The spill slot's address is at rbp - (index + 1) * kPointerSize -
+    // StandardFrameConstants::kFixedFrameSizeFromFp. kFixedFrameSizeFromFp is
+    // 2 * kPointerSize, if rbp is aligned at 8-byte boundary, the below "|= 1"
+    // will make sure the spilled doubles are aligned at 8-byte boundary.
+    // TODO(haitao): make sure rbp is aligned at 8-byte boundary for x32 port.
+    spill_slot_count_ |= 1;
+  }
   return spill_slot_count_++;
 }
 

@@ -27,8 +27,8 @@
 
 #include <climits>
 #include <csignal>
-#include <string>
 #include <map>
+#include <string>
 
 #include "src/v8.h"
 
@@ -4153,7 +4153,7 @@ bool message_received;
 static void check_message_0(v8::Handle<v8::Message> message,
                             v8::Handle<Value> data) {
   CHECK_EQ(5.76, data->NumberValue());
-  CHECK_EQ(6.75, message->GetScriptResourceName()->NumberValue());
+  CHECK_EQ(6.75, message->GetScriptOrigin().ResourceName()->NumberValue());
   CHECK(!message->IsSharedCrossOrigin());
   message_received = true;
 }
@@ -4227,7 +4227,7 @@ TEST(MessageHandler2) {
 static void check_message_3(v8::Handle<v8::Message> message,
                             v8::Handle<Value> data) {
   CHECK(message->IsSharedCrossOrigin());
-  CHECK_EQ(6.75, message->GetScriptResourceName()->NumberValue());
+  CHECK_EQ(6.75, message->GetScriptOrigin().ResourceName()->NumberValue());
   message_received = true;
 }
 
@@ -4256,7 +4256,7 @@ TEST(MessageHandler3) {
 static void check_message_4(v8::Handle<v8::Message> message,
                             v8::Handle<Value> data) {
   CHECK(!message->IsSharedCrossOrigin());
-  CHECK_EQ(6.75, message->GetScriptResourceName()->NumberValue());
+  CHECK_EQ(6.75, message->GetScriptOrigin().ResourceName()->NumberValue());
   message_received = true;
 }
 
@@ -4285,7 +4285,7 @@ TEST(MessageHandler4) {
 static void check_message_5a(v8::Handle<v8::Message> message,
                             v8::Handle<Value> data) {
   CHECK(message->IsSharedCrossOrigin());
-  CHECK_EQ(6.75, message->GetScriptResourceName()->NumberValue());
+  CHECK_EQ(6.75, message->GetScriptOrigin().ResourceName()->NumberValue());
   message_received = true;
 }
 
@@ -4293,7 +4293,7 @@ static void check_message_5a(v8::Handle<v8::Message> message,
 static void check_message_5b(v8::Handle<v8::Message> message,
                             v8::Handle<Value> data) {
   CHECK(!message->IsSharedCrossOrigin());
-  CHECK_EQ(6.75, message->GetScriptResourceName()->NumberValue());
+  CHECK_EQ(6.75, message->GetScriptOrigin().ResourceName()->NumberValue());
   message_received = true;
 }
 
@@ -5339,7 +5339,7 @@ TEST(TryCatchNested) {
 void TryCatchMixedNestingCheck(v8::TryCatch* try_catch) {
   CHECK(try_catch->HasCaught());
   Handle<Message> message = try_catch->Message();
-  Handle<Value> resource = message->GetScriptResourceName();
+  Handle<Value> resource = message->GetScriptOrigin().ResourceName();
   CHECK_EQ(0, strcmp(*v8::String::Utf8Value(resource), "inner"));
   CHECK_EQ(0, strcmp(*v8::String::Utf8Value(message->Get()),
                      "Uncaught Error: a"));
@@ -7110,8 +7110,9 @@ TEST(ErrorReporting) {
 
 static void MissingScriptInfoMessageListener(v8::Handle<v8::Message> message,
                                              v8::Handle<Value> data) {
-  CHECK(message->GetScriptResourceName()->IsUndefined());
-  CHECK_EQ(v8::Undefined(CcTest::isolate()), message->GetScriptResourceName());
+  CHECK(message->GetScriptOrigin().ResourceName()->IsUndefined());
+  CHECK_EQ(v8::Undefined(CcTest::isolate()),
+      message->GetScriptOrigin().ResourceName());
   message->GetLineNumber();
   message->GetSourceLine();
 }
@@ -8296,9 +8297,9 @@ TEST(ApiUncaughtException) {
 static const char* script_resource_name = "ExceptionInNativeScript.js";
 static void ExceptionInNativeScriptTestListener(v8::Handle<v8::Message> message,
                                                 v8::Handle<Value>) {
-  v8::Handle<v8::Value> name_val = message->GetScriptResourceName();
+  v8::Handle<v8::Value> name_val = message->GetScriptOrigin().ResourceName();
   CHECK(!name_val.IsEmpty() && name_val->IsString());
-  v8::String::Utf8Value name(message->GetScriptResourceName());
+  v8::String::Utf8Value name(message->GetScriptOrigin().ResourceName());
   CHECK_EQ(script_resource_name, *name);
   CHECK_EQ(3, message->GetLineNumber());
   v8::String::Utf8Value source_line(message->GetSourceLine());
@@ -9019,19 +9020,13 @@ static bool IndexedAccessBlocker(Local<v8::Object> global,
 }
 
 
-static int g_echo_value_1 = -1;
-static int g_echo_value_2 = -1;
+static int g_echo_value = -1;
 
 
 static void EchoGetter(
     Local<String> name,
     const v8::PropertyCallbackInfo<v8::Value>& info) {
-  info.GetReturnValue().Set(v8_num(g_echo_value_1));
-}
-
-
-static void EchoGetter(const v8::FunctionCallbackInfo<v8::Value>& info) {
-  info.GetReturnValue().Set(v8_num(g_echo_value_2));
+  info.GetReturnValue().Set(v8_num(g_echo_value));
 }
 
 
@@ -9039,14 +9034,7 @@ static void EchoSetter(Local<String> name,
                        Local<Value> value,
                        const v8::PropertyCallbackInfo<void>&) {
   if (value->IsNumber())
-    g_echo_value_1 = value->Int32Value();
-}
-
-
-static void EchoSetter(const v8::FunctionCallbackInfo<v8::Value>& info) {
-  v8::Handle<v8::Value> value = info[0];
-  if (value->IsNumber())
-    g_echo_value_2 = value->Int32Value();
+    g_echo_value = value->Int32Value();
 }
 
 
@@ -9086,13 +9074,6 @@ TEST(AccessControl) {
       v8::Handle<Value>(),
       v8::AccessControl(v8::ALL_CAN_READ | v8::ALL_CAN_WRITE));
 
-
-  global_template->SetAccessorProperty(
-      v8_str("accessible_js_prop"),
-      v8::FunctionTemplate::New(isolate, EchoGetter),
-      v8::FunctionTemplate::New(isolate, EchoSetter),
-      v8::None,
-      v8::AccessControl(v8::ALL_CAN_READ | v8::ALL_CAN_WRITE));
 
   // Add an accessor that is not accessible by cross-domain JS code.
   global_template->SetAccessor(v8_str("blocked_prop"),
@@ -9150,16 +9131,6 @@ TEST(AccessControl) {
       "Object.getOwnPropertyDescriptor(other, 'blocked_prop')");
   ExpectFalse("propertyIsEnumerable.call(other, 'blocked_prop')");
 
-  // Enable ACCESS_HAS
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  ExpectUndefined("other.blocked_prop");
-  // ... and now we can get the descriptor...
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'blocked_prop').value");
-  // ... and enumerate the property.
-  ExpectTrue("propertyIsEnumerable.call(other, 'blocked_prop')");
-  allowed_access_type[v8::ACCESS_HAS] = false;
-
   // Access blocked element.
   CompileRun("other[239] = 1");
 
@@ -9183,17 +9154,6 @@ TEST(AccessControl) {
   ExpectUndefined(
       "Object.getOwnPropertyDescriptor(other, 'js_accessor_p')");
 
-  // Enable ACCESS_HAS.
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  ExpectUndefined("other.js_accessor_p");
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').get");
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').set");
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').value");
-  allowed_access_type[v8::ACCESS_HAS] = false;
-
   // Enable both ACCESS_HAS and ACCESS_GET.
   allowed_access_type[v8::ACCESS_HAS] = true;
   allowed_access_type[v8::ACCESS_GET] = true;
@@ -9201,45 +9161,13 @@ TEST(AccessControl) {
   ExpectString("other.js_accessor_p", "getter");
   ExpectObject(
       "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').get", getter);
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').set");
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').value");
-
-  allowed_access_type[v8::ACCESS_GET] = false;
-  allowed_access_type[v8::ACCESS_HAS] = false;
-
-  // Enable both ACCESS_HAS and ACCESS_SET.
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  allowed_access_type[v8::ACCESS_SET] = true;
-
-  ExpectUndefined("other.js_accessor_p");
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').get");
   ExpectObject(
       "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').set", setter);
   ExpectUndefined(
       "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').value");
 
-  allowed_access_type[v8::ACCESS_SET] = false;
   allowed_access_type[v8::ACCESS_HAS] = false;
-
-  // Enable both ACCESS_HAS, ACCESS_GET and ACCESS_SET.
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  allowed_access_type[v8::ACCESS_GET] = true;
-  allowed_access_type[v8::ACCESS_SET] = true;
-
-  ExpectString("other.js_accessor_p", "getter");
-  ExpectObject(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').get", getter);
-  ExpectObject(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').set", setter);
-  ExpectUndefined(
-      "Object.getOwnPropertyDescriptor(other, 'js_accessor_p').value");
-
-  allowed_access_type[v8::ACCESS_SET] = false;
   allowed_access_type[v8::ACCESS_GET] = false;
-  allowed_access_type[v8::ACCESS_HAS] = false;
 
   // Access an element with JS accessor.
   CompileRun("other[42] = 2");
@@ -9247,51 +9175,17 @@ TEST(AccessControl) {
   ExpectUndefined("other[42]");
   ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42')");
 
-  // Enable ACCESS_HAS.
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  ExpectUndefined("other[42]");
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').get");
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').set");
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').value");
-  allowed_access_type[v8::ACCESS_HAS] = false;
-
   // Enable both ACCESS_HAS and ACCESS_GET.
   allowed_access_type[v8::ACCESS_HAS] = true;
   allowed_access_type[v8::ACCESS_GET] = true;
 
   ExpectString("other[42]", "el_getter");
   ExpectObject("Object.getOwnPropertyDescriptor(other, '42').get", el_getter);
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').set");
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').value");
-
-  allowed_access_type[v8::ACCESS_GET] = false;
-  allowed_access_type[v8::ACCESS_HAS] = false;
-
-  // Enable both ACCESS_HAS and ACCESS_SET.
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  allowed_access_type[v8::ACCESS_SET] = true;
-
-  ExpectUndefined("other[42]");
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').get");
   ExpectObject("Object.getOwnPropertyDescriptor(other, '42').set", el_setter);
   ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').value");
 
-  allowed_access_type[v8::ACCESS_SET] = false;
   allowed_access_type[v8::ACCESS_HAS] = false;
-
-  // Enable both ACCESS_HAS, ACCESS_GET and ACCESS_SET.
-  allowed_access_type[v8::ACCESS_HAS] = true;
-  allowed_access_type[v8::ACCESS_GET] = true;
-  allowed_access_type[v8::ACCESS_SET] = true;
-
-  ExpectString("other[42]", "el_getter");
-  ExpectObject("Object.getOwnPropertyDescriptor(other, '42').get", el_getter);
-  ExpectObject("Object.getOwnPropertyDescriptor(other, '42').set", el_setter);
-  ExpectUndefined("Object.getOwnPropertyDescriptor(other, '42').value");
-
-  allowed_access_type[v8::ACCESS_SET] = false;
   allowed_access_type[v8::ACCESS_GET] = false;
-  allowed_access_type[v8::ACCESS_HAS] = false;
 
   v8::Handle<Value> value;
 
@@ -9299,19 +9193,9 @@ TEST(AccessControl) {
   value = CompileRun("other.accessible_prop = 3");
   CHECK(value->IsNumber());
   CHECK_EQ(3, value->Int32Value());
-  CHECK_EQ(3, g_echo_value_1);
-
-  // Access accessible js property
-  value = CompileRun("other.accessible_js_prop = 3");
-  CHECK(value->IsNumber());
-  CHECK_EQ(3, value->Int32Value());
-  CHECK_EQ(3, g_echo_value_2);
+  CHECK_EQ(3, g_echo_value);
 
   value = CompileRun("other.accessible_prop");
-  CHECK(value->IsNumber());
-  CHECK_EQ(3, value->Int32Value());
-
-  value = CompileRun("other.accessible_js_prop");
   CHECK(value->IsNumber());
   CHECK_EQ(3, value->Int32Value());
 
@@ -9320,15 +9204,7 @@ TEST(AccessControl) {
   CHECK(value->IsNumber());
   CHECK_EQ(3, value->Int32Value());
 
-  value = CompileRun(
-      "Object.getOwnPropertyDescriptor(other, 'accessible_js_prop').get()");
-  CHECK(value->IsNumber());
-  CHECK_EQ(3, value->Int32Value());
-
   value = CompileRun("propertyIsEnumerable.call(other, 'accessible_prop')");
-  CHECK(value->IsTrue());
-
-  value = CompileRun("propertyIsEnumerable.call(other, 'accessible_js_prop')");
   CHECK(value->IsTrue());
 
   // Enumeration doesn't enumerate accessors from inaccessible objects in
@@ -9337,7 +9213,6 @@ TEST(AccessControl) {
       CompileRun("(function(){var obj = {'__proto__':other};"
                  "for (var p in obj)"
                  "   if (p == 'accessible_prop' ||"
-                 "       p == 'accessible_js_prop' ||"
                  "       p == 'blocked_js_prop' ||"
                  "       p == 'blocked_js_prop') {"
                  "     return false;"
@@ -9412,7 +9287,7 @@ TEST(AccessControlES5) {
   // Make sure that we can set the accessible accessors value using normal
   // assignment.
   CompileRun("other.accessible_prop = 42");
-  CHECK_EQ(42, g_echo_value_1);
+  CHECK_EQ(42, g_echo_value);
 
   v8::Handle<Value> value;
   CompileRun("Object.defineProperty(other, 'accessible_prop', {value: -1})");
@@ -13028,7 +12903,7 @@ static void WebKitLike(Handle<Message> message, Handle<Value> data) {
   Handle<String> errorMessageString = message->Get();
   CHECK(!errorMessageString.IsEmpty());
   message->GetStackTrace();
-  message->GetScriptResourceName();
+  message->GetScriptOrigin().ResourceName();
 }
 
 
@@ -14424,7 +14299,7 @@ static void CheckTryCatchSourceInfo(v8::Handle<v8::Script> script,
   CHECK_EQ(3, message->GetEndColumn());
   v8::String::Utf8Value line(message->GetSourceLine());
   CHECK_EQ("  throw 'nirk';", *line);
-  v8::String::Utf8Value name(message->GetScriptResourceName());
+  v8::String::Utf8Value name(message->GetScriptOrigin().ResourceName());
   CHECK_EQ(resource_name, *name);
 }
 
@@ -17700,6 +17575,54 @@ TEST(DynamicWithSourceURLInStackTraceString) {
 }
 
 
+TEST(EvalWithSourceURLInMessageScriptResourceNameOrSourceURL) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+
+  const char *source =
+    "function outer() {\n"
+    "  var scriptContents = \"function foo() { FAIL.FAIL; }\\\n"
+    "  //# sourceURL=source_url\";\n"
+    "  eval(scriptContents);\n"
+    "  foo(); }\n"
+    "outer();\n"
+    "//# sourceURL=outer_url";
+
+  v8::TryCatch try_catch;
+  CompileRun(source);
+  CHECK(try_catch.HasCaught());
+
+  Local<v8::Message> message = try_catch.Message();
+  Handle<Value> sourceURL =
+    message->GetScriptOrigin().ResourceName();
+  CHECK_EQ(*v8::String::Utf8Value(sourceURL), "source_url");
+}
+
+
+TEST(RecursionWithSourceURLInMessageScriptResourceNameOrSourceURL) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+
+  const char *source =
+    "function outer() {\n"
+    "  var scriptContents = \"function boo(){ boo(); }\\\n"
+    "  //# sourceURL=source_url\";\n"
+    "  eval(scriptContents);\n"
+    "  boo(); }\n"
+    "outer();\n"
+    "//# sourceURL=outer_url";
+
+  v8::TryCatch try_catch;
+  CompileRun(source);
+  CHECK(try_catch.HasCaught());
+
+  Local<v8::Message> message = try_catch.Message();
+  Handle<Value> sourceURL =
+    message->GetScriptOrigin().ResourceName();
+  CHECK_EQ(*v8::String::Utf8Value(sourceURL), "source_url");
+}
+
+
 static void CreateGarbageInOldSpace() {
   i::Factory* factory = CcTest::i_isolate()->factory();
   v8::HandleScope scope(CcTest::isolate());
@@ -19830,6 +19753,7 @@ TEST(PersistentHandleInNewSpaceVisitor) {
   CHECK_EQ(42, object1.WrapperClassId());
 
   CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
 
   v8::Persistent<v8::Object> object2(isolate, v8::Object::New(isolate));
   CHECK_EQ(0, object2.WrapperClassId());
@@ -20901,6 +20825,37 @@ TEST(RunMicrotasksWithoutEnteringContext) {
     CHECK_EQ(1, CompileRun("ext1Calls")->Int32Value());
   }
   isolate->SetAutorunMicrotasks(true);
+}
+
+
+static void DebugEventInObserver(const v8::Debug::EventDetails& event_details) {
+  v8::DebugEvent event = event_details.GetEvent();
+  if (event != v8::Break) return;
+  Handle<Object> exec_state = event_details.GetExecutionState();
+  Handle<Value> break_id = exec_state->Get(v8_str("break_id"));
+  CompileRun("function f(id) { new FrameDetails(id, 0); }");
+  Handle<Function> fun = Handle<Function>::Cast(
+      CcTest::global()->Get(v8_str("f"))->ToObject());
+  fun->Call(CcTest::global(), 1, &break_id);
+}
+
+
+TEST(Regress385349) {
+  i::FLAG_allow_natives_syntax = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  HandleScope handle_scope(isolate);
+  isolate->SetAutorunMicrotasks(false);
+  Handle<Context> context = Context::New(isolate);
+  v8::Debug::SetDebugEventListener(DebugEventInObserver);
+  {
+    Context::Scope context_scope(context);
+    CompileRun("var obj = {};"
+               "Object.observe(obj, function(changes) { debugger; });"
+               "obj.a = 0;");
+  }
+  isolate->RunMicrotasks();
+  isolate->SetAutorunMicrotasks(true);
+  v8::Debug::SetDebugEventListener(NULL);
 }
 
 

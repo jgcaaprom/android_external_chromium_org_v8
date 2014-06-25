@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "src/v8.h"
+
 #include "src/allocation-site-scopes.h"
 #include "src/codegen.h"
 #include "src/full-codegen.h"
@@ -19,10 +20,10 @@
 #include "src/hydrogen-dehoist.h"
 #include "src/hydrogen-environment-liveness.h"
 #include "src/hydrogen-escape-analysis.h"
+#include "src/hydrogen-gvn.h"
 #include "src/hydrogen-infer-representation.h"
 #include "src/hydrogen-infer-types.h"
 #include "src/hydrogen-load-elimination.h"
-#include "src/hydrogen-gvn.h"
 #include "src/hydrogen-mark-deoptimize.h"
 #include "src/hydrogen-mark-unreachable.h"
 #include "src/hydrogen-osr.h"
@@ -42,17 +43,17 @@
 #include "src/typing.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "src/ia32/lithium-codegen-ia32.h"
+#include "src/ia32/lithium-codegen-ia32.h"  // NOLINT
 #elif V8_TARGET_ARCH_X64
-#include "src/x64/lithium-codegen-x64.h"
+#include "src/x64/lithium-codegen-x64.h"  // NOLINT
 #elif V8_TARGET_ARCH_ARM64
-#include "src/arm64/lithium-codegen-arm64.h"
+#include "src/arm64/lithium-codegen-arm64.h"  // NOLINT
 #elif V8_TARGET_ARCH_ARM
-#include "src/arm/lithium-codegen-arm.h"
+#include "src/arm/lithium-codegen-arm.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
-#include "src/mips/lithium-codegen-mips.h"
+#include "src/mips/lithium-codegen-mips.h"  // NOLINT
 #elif V8_TARGET_ARCH_X87
-#include "src/x87/lithium-codegen-x87.h"
+#include "src/x87/lithium-codegen-x87.h"  // NOLINT
 #else
 #error Unsupported target architecture.
 #endif
@@ -7625,6 +7626,9 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
 
   // Parse and allocate variables.
   CompilationInfo target_info(target, zone());
+  // Use the same AstValueFactory for creating strings in the sub-compilation
+  // step, but don't transfer ownership to target_info.
+  target_info.SetAstValueFactory(top_info()->ast_value_factory(), false);
   Handle<SharedFunctionInfo> target_shared(target->shared());
   if (!Parser::Parse(&target_info) || !Scope::Analyze(&target_info)) {
     if (target_info.isolate()->has_pending_exception()) {
@@ -8563,10 +8567,12 @@ bool HOptimizedGraphBuilder::TryCallApply(Call* expr) {
   HValue* function = Pop();  // f
   Drop(1);  // apply
 
+  HValue* checked_function = AddCheckMap(function, function_map);
+
   if (function_state()->outer() == NULL) {
     HInstruction* elements = Add<HArgumentsElements>(false);
     HInstruction* length = Add<HArgumentsLength>(elements);
-    HValue* wrapped_receiver = BuildWrapReceiver(receiver, function);
+    HValue* wrapped_receiver = BuildWrapReceiver(receiver, checked_function);
     HInstruction* result = New<HApplyArguments>(function,
                                                 wrapped_receiver,
                                                 length,
@@ -8582,7 +8588,7 @@ bool HOptimizedGraphBuilder::TryCallApply(Call* expr) {
     const ZoneList<HValue*>* arguments_values = args->arguments_values();
     int arguments_count = arguments_values->length();
     Push(function);
-    Push(BuildWrapReceiver(receiver, function));
+    Push(BuildWrapReceiver(receiver, checked_function));
     for (int i = 1; i < arguments_count; i++) {
       Push(arguments_values->at(i));
     }
@@ -11708,11 +11714,13 @@ void HOptimizedGraphBuilder::GenerateDebugBreakInOptimizedCode(
 }
 
 
-void HOptimizedGraphBuilder::GenerateDebugCallbackSupportsStepping(
-    CallRuntime* call) {
-  ASSERT(call->arguments()->length() == 1);
-  // Debugging is not supported in optimized code.
-  return ast_context()->ReturnValue(graph()->GetConstantFalse());
+void HOptimizedGraphBuilder::GenerateDebugIsActive(CallRuntime* call) {
+  ASSERT(call->arguments()->length() == 0);
+  HValue* ref =
+      Add<HConstant>(ExternalReference::debug_is_active_address(isolate()));
+  HValue* value = Add<HLoadNamedField>(
+      ref, static_cast<HValue*>(NULL), HObjectAccess::ForExternalUInteger8());
+  return ast_context()->ReturnValue(value);
 }
 
 

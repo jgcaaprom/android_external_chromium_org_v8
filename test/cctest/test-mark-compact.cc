@@ -28,11 +28,11 @@
 #include <stdlib.h>
 
 #ifdef __linux__
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #include <utility>
@@ -92,7 +92,8 @@ TEST(Promotion) {
   CHECK(heap->InSpace(*array, NEW_SPACE));
 
   // Call mark compact GC, so array becomes an old object.
-  heap->CollectGarbage(OLD_POINTER_SPACE);
+  heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
+  heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
 
   // Array now sits in the old space
   CHECK(heap->InSpace(*array, OLD_POINTER_SPACE));
