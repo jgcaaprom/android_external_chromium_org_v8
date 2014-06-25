@@ -34,6 +34,7 @@ LOCAL_SRC_FILES := \
 	v8/src/arguments.cc \
 	v8/src/assembler.cc \
 	v8/src/assert-scope.cc \
+	v8/src/ast-value-factory.cc \
 	v8/src/ast.cc \
 	v8/src/bignum-dtoa.cc \
 	v8/src/bignum.cc \
@@ -155,7 +156,7 @@ LOCAL_SRC_FILES := \
 	v8/src/scopeinfo.cc \
 	v8/src/scopes.cc \
 	v8/src/serialize.cc \
-	v8/src/snapshot-common.cc \
+	v8/src/snapshot-source-sink.cc \
 	v8/src/spaces.cc \
 	v8/src/store-buffer.cc \
 	v8/src/string-search.cc \
@@ -254,6 +255,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -267,7 +269,6 @@ MY_DEFS_Debug := \
 	'-D__mips_hard_float=1' \
 	'-D_MIPS_ARCH_MIPS32R2' \
 	'-DV8_I18N_SUPPORT' \
-	'-DCAN_USE_VFP_INSTRUCTIONS' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
@@ -308,6 +309,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-uninitialized \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -370,6 +374,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -383,7 +388,6 @@ MY_DEFS_Release := \
 	'-D__mips_hard_float=1' \
 	'-D_MIPS_ARCH_MIPS32R2' \
 	'-DV8_I18N_SUPPORT' \
-	'-DCAN_USE_VFP_INSTRUCTIONS' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
@@ -419,6 +423,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-uninitialized \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

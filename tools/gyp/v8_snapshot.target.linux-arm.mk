@@ -50,7 +50,8 @@ LOCAL_GENERATED_SOURCES := \
 GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)
 
-LOCAL_SRC_FILES :=
+LOCAL_SRC_FILES := \
+	v8/src/snapshot-common.cc
 
 
 # Flags passed to both C and C++ files.
@@ -113,6 +114,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -122,6 +124,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DV8_TARGET_ARCH_ARM' \
+	'-DCAN_USE_ARMV7_INSTRUCTIONS' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -130,8 +133,6 @@ MY_DEFS_Debug := \
 	'-DUSE_STLPORT=1' \
 	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
 	'-DCHROME_BUILD_ID=""' \
-	'-DARM_TEST' \
-	'-DCAN_USE_ARMV7_INSTRUCTIONS=1' \
 	'-DDYNAMIC_ANNOTATIONS_ENABLED=1' \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG' \
@@ -161,6 +162,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -228,6 +232,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -237,6 +242,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DV8_TARGET_ARCH_ARM' \
+	'-DCAN_USE_ARMV7_INSTRUCTIONS' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -245,8 +251,6 @@ MY_DEFS_Release := \
 	'-DUSE_STLPORT=1' \
 	'-D_STLP_USE_PTR_SPECIALIZATIONS=1' \
 	'-DCHROME_BUILD_ID=""' \
-	'-DARM_TEST' \
-	'-DCAN_USE_ARMV7_INSTRUCTIONS=1' \
 	'-DNDEBUG' \
 	'-DNVALGRIND' \
 	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
@@ -271,6 +275,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
