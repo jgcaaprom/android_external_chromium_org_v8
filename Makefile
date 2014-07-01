@@ -145,7 +145,13 @@ ifneq ($(strip $(asan)),)
   export LINK=$(asan)
   export ASAN_SYMBOLIZER_PATH="$(dir $(asan))llvm-symbolizer"
 endif
-
+# msan=/path/to/clang++
+ifneq ($(strip $(msan)),)
+  GYPFLAGS += -Dmsan=1 -Dmsan_track_origins=2
+  export CXX=$(msan)
+  export CXX_host=$(msan)
+  export LINK=$(msan)
+endif
 # arm specific flags.
 # arm_version=<number | "default">
 ifneq ($(strip $(arm_version)),)
@@ -469,8 +475,5 @@ dependencies:
 	svn checkout --force \
 	    https://src.chromium.org/chrome/trunk/deps/third_party/icu46 \
 	    third_party/icu --revision 258359
-	( test -d buildtools || \
-	  git clone https://chromium.googlesource.com/chromium/buildtools.git; \
-	  cd buildtools; \
-	  git fetch origin; \
-	  git checkout 5d89977ce55240995d1596fe420b818468f5ec37 )
+	# The spec is a copy of the hooks in v8's DEPS file.
+	gclient sync -r fb782d4369d5ae04f17a2fceef7de5a63e50f07b --spec="solutions = [{u'managed': False, u'name': u'buildtools', u'url': u'https://chromium.googlesource.com/chromium/buildtools.git', u'custom_deps': {}, u'custom_hooks': [{u'name': u'clang_format_win',u'pattern': u'.',u'action': [u'download_from_google_storage',u'--no_resume',u'--platform=win32',u'--no_auth',u'--bucket',u'chromium-clang-format',u'-s',u'buildtools/win/clang-format.exe.sha1']},{u'name': u'clang_format_mac',u'pattern': u'.',u'action': [u'download_from_google_storage',u'--no_resume',u'--platform=darwin',u'--no_auth',u'--bucket',u'chromium-clang-format',u'-s',u'buildtools/mac/clang-format.sha1']},{u'name': u'clang_format_linux',u'pattern': u'.',u'action': [u'download_from_google_storage',u'--no_resume',u'--platform=linux*',u'--no_auth',u'--bucket',u'chromium-clang-format',u'-s',u'buildtools/linux64/clang-format.sha1']}],u'deps_file': u'.DEPS.git', u'safesync_url': u''}]"

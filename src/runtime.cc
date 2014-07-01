@@ -11,12 +11,13 @@
 #include "src/allocation-site-scopes.h"
 #include "src/api.h"
 #include "src/arguments.h"
+#include "src/base/cpu.h"
+#include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
 #include "src/compiler.h"
 #include "src/conversions.h"
-#include "src/cpu.h"
 #include "src/cpu-profiler.h"
 #include "src/date.h"
 #include "src/dateparser-inl.h"
@@ -33,7 +34,6 @@
 #include "src/liveedit.h"
 #include "src/misc-intrinsics.h"
 #include "src/parser.h"
-#include "src/platform.h"
 #include "src/runtime.h"
 #include "src/runtime-profiler.h"
 #include "src/scopeinfo.h"
@@ -273,8 +273,12 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
     if (key->IsInternalizedString()) {
       if (Handle<String>::cast(key)->AsArrayIndex(&element_index)) {
         // Array index as string (uint32).
-        maybe_result = JSObject::SetOwnElement(
-            boilerplate, element_index, value, SLOPPY);
+        if (value->IsUninitialized()) {
+          maybe_result = value;
+        } else {
+          maybe_result = JSObject::SetOwnElement(
+              boilerplate, element_index, value, SLOPPY);
+        }
       } else {
         Handle<String> name(String::cast(*key));
         ASSERT(!name->AsArrayIndex(&element_index));
@@ -284,8 +288,12 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
       }
     } else if (key->ToArrayIndex(&element_index)) {
       // Array index (uint32).
-      maybe_result = JSObject::SetOwnElement(
-          boilerplate, element_index, value, SLOPPY);
+      if (value->IsUninitialized()) {
+        maybe_result = value;
+      } else {
+        maybe_result = JSObject::SetOwnElement(
+            boilerplate, element_index, value, SLOPPY);
+      }
     } else {
       // Non-uint32 number.
       ASSERT(key->IsNumber());
@@ -295,8 +303,7 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
       const char* str = DoubleToCString(num, buffer);
       Handle<String> name = isolate->factory()->NewStringFromAsciiChecked(str);
       maybe_result = JSObject::SetOwnPropertyIgnoreAttributes(
-          boilerplate, name, value, NONE,
-          value_type, mode);
+          boilerplate, name, value, NONE, value_type, mode);
     }
     // If setting the property on the boilerplate throws an
     // exception, the exception is converted to an empty handle in
@@ -1540,7 +1547,7 @@ RUNTIME_FUNCTION(Runtime_SetAdd) {
   Handle<OrderedHashSet> table(OrderedHashSet::cast(holder->table()));
   table = OrderedHashSet::Add(table, key);
   holder->set_table(*table);
-  return isolate->heap()->undefined_value();
+  return *holder;
 }
 
 
@@ -1678,7 +1685,7 @@ RUNTIME_FUNCTION(Runtime_MapSet) {
   Handle<OrderedHashMap> table(OrderedHashMap::cast(holder->table()));
   Handle<OrderedHashMap> new_table = OrderedHashMap::Put(table, key, value);
   holder->set_table(*new_table);
-  return isolate->heap()->undefined_value();
+  return *holder;
 }
 
 
@@ -1792,7 +1799,7 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionSet) {
   RUNTIME_ASSERT(table->IsKey(*key));
   Handle<ObjectHashTable> new_table = ObjectHashTable::Put(table, key, value);
   weak_collection->set_table(*new_table);
-  return isolate->heap()->undefined_value();
+  return *weak_collection;
 }
 
 
@@ -2097,37 +2104,6 @@ RUNTIME_FUNCTION(Runtime_EnableAccessChecks) {
 }
 
 
-// Transform getter or setter into something DefineAccessor can handle.
-static Handle<Object> InstantiateAccessorComponent(Isolate* isolate,
-                                                   Handle<Object> component) {
-  if (component->IsUndefined()) return isolate->factory()->null_value();
-  Handle<FunctionTemplateInfo> info =
-      Handle<FunctionTemplateInfo>::cast(component);
-  return Utils::OpenHandle(*Utils::ToLocal(info)->GetFunction());
-}
-
-
-RUNTIME_FUNCTION(Runtime_SetAccessorProperty) {
-  HandleScope scope(isolate);
-  ASSERT(args.length() == 5);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, getter, 2);
-  CONVERT_ARG_HANDLE_CHECKED(Object, setter, 3);
-  CONVERT_SMI_ARG_CHECKED(attribute, 4);
-  RUNTIME_ASSERT(getter->IsUndefined() || getter->IsFunctionTemplateInfo());
-  RUNTIME_ASSERT(setter->IsUndefined() || setter->IsFunctionTemplateInfo());
-  RUNTIME_ASSERT(PropertyDetails::AttributesField::is_valid(
-      static_cast<PropertyAttributes>(attribute)));
-  JSObject::DefineAccessor(object,
-                           name,
-                           InstantiateAccessorComponent(isolate, getter),
-                           InstantiateAccessorComponent(isolate, setter),
-                           static_cast<PropertyAttributes>(attribute));
-  return isolate->heap()->undefined_value();
-}
-
-
 static Object* ThrowRedeclarationError(Isolate* isolate, Handle<String> name) {
   HandleScope scope(isolate);
   Handle<Object> args[1] = { name };
@@ -2419,10 +2395,7 @@ RUNTIME_FUNCTION(Runtime_InitializeConstGlobal) {
   if (!lookup.IsFound()) {
     HandleScope handle_scope(isolate);
     Handle<GlobalObject> global(isolate->context()->global_object());
-    RETURN_FAILURE_ON_EXCEPTION(
-        isolate,
-        JSObject::SetOwnPropertyIgnoreAttributes(global, name, value,
-                                                 attributes));
+    JSObject::AddProperty(global, name, value, attributes);
     return *value;
   }
 
@@ -4478,6 +4451,14 @@ RUNTIME_FUNCTION(Runtime_SubString) {
 }
 
 
+RUNTIME_FUNCTION(Runtime_InternalizeString) {
+  HandleScope handles(isolate);
+  RUNTIME_ASSERT(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(String, string, 0);
+  return *isolate->factory()->InternalizeString(string);
+}
+
+
 RUNTIME_FUNCTION(Runtime_StringMatch) {
   HandleScope handles(isolate);
   ASSERT(args.length() == 3);
@@ -5039,7 +5020,7 @@ static bool IsValidAccessor(Handle<Object> obj) {
 // Steps 9c & 12 - replace an existing data property with an accessor property.
 // Step 12 - update an existing accessor property with an accessor or generic
 //           descriptor.
-RUNTIME_FUNCTION(Runtime_DefineOrRedefineAccessorProperty) {
+RUNTIME_FUNCTION(Runtime_DefineAccessorPropertyUnchecked) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 5);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
@@ -5068,7 +5049,7 @@ RUNTIME_FUNCTION(Runtime_DefineOrRedefineAccessorProperty) {
 // Steps 9b & 12 - replace an existing accessor property with a data property.
 // Step 12 - update an existing data property with a data or generic
 //           descriptor.
-RUNTIME_FUNCTION(Runtime_DefineOrRedefineDataProperty) {
+RUNTIME_FUNCTION(Runtime_DefineDataPropertyUnchecked) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, js_object, 0);
@@ -5126,7 +5107,7 @@ RUNTIME_FUNCTION(Runtime_DefineOrRedefineDataProperty) {
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::ForceSetObjectProperty(
+      Runtime::DefineObjectProperty(
           js_object, name, obj_value, attr,
           JSReceiver::CERTAINLY_NOT_STORE_FROM_KEYED));
   return *result;
@@ -5147,10 +5128,8 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
                                                Handle<Object> object,
                                                Handle<Object> key,
                                                Handle<Object> value,
-                                               PropertyAttributes attr,
-                                               StrictMode strict_mode) {
-  SetPropertyMode set_mode = attr == NONE ? SET_PROPERTY : DEFINE_PROPERTY;
-
+                                               StrictMode strict_mode,
+                                               PropertyAttributes attrs) {
   if (object->IsUndefined() || object->IsNull()) {
     Handle<Object> args[2] = { key, object };
     Handle<Object> error =
@@ -5169,8 +5148,7 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
     }
     Handle<Name> name = Handle<Name>::cast(name_object);
     return JSReceiver::SetProperty(Handle<JSProxy>::cast(object), name, value,
-                                   attr,
-                                   strict_mode);
+                                   attrs, strict_mode);
   }
 
   // If the object isn't a JavaScript object, we ignore the store.
@@ -5202,7 +5180,7 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
     }
 
     MaybeHandle<Object> result = JSObject::SetElement(
-        js_object, index, value, attr, strict_mode, true, set_mode);
+        js_object, index, value, attrs, strict_mode, true, SET_PROPERTY);
     JSObject::ValidateElements(js_object);
 
     return result.is_null() ? result : value;
@@ -5217,11 +5195,12 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
               isolate, value, Execution::ToNumber(isolate, value), Object);
         }
       }
-      return JSObject::SetElement(js_object, index, value, attr,
-                                  strict_mode, true, set_mode);
+      return JSObject::SetElement(js_object, index, value, attrs,
+                                  strict_mode, true, SET_PROPERTY);
     } else {
       if (name->IsString()) name = String::Flatten(Handle<String>::cast(name));
-      return JSReceiver::SetProperty(js_object, name, value, attr, strict_mode);
+      return JSReceiver::SetProperty(
+          js_object, name, value, attrs, strict_mode);
     }
   }
 
@@ -5232,15 +5211,15 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
   Handle<String> name = Handle<String>::cast(converted);
 
   if (name->AsArrayIndex(&index)) {
-    return JSObject::SetElement(js_object, index, value, attr,
-                                strict_mode, true, set_mode);
+    return JSObject::SetElement(js_object, index, value, attrs,
+                                strict_mode, true, SET_PROPERTY);
   } else {
-    return JSReceiver::SetProperty(js_object, name, value, attr, strict_mode);
+    return JSReceiver::SetProperty(js_object, name, value, attrs, strict_mode);
   }
 }
 
 
-MaybeHandle<Object> Runtime::ForceSetObjectProperty(
+MaybeHandle<Object> Runtime::DefineObjectProperty(
     Handle<JSObject> js_object,
     Handle<Object> key,
     Handle<Object> value,
@@ -5345,11 +5324,11 @@ RUNTIME_FUNCTION(Runtime_SetHiddenProperty) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_SetProperty) {
+RUNTIME_FUNCTION(Runtime_AddProperty) {
   HandleScope scope(isolate);
-  RUNTIME_ASSERT(args.length() == 4 || args.length() == 5);
+  RUNTIME_ASSERT(args.length() == 4);
 
-  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
   CONVERT_SMI_ARG_CHECKED(unchecked_attributes, 3);
@@ -5359,17 +5338,85 @@ RUNTIME_FUNCTION(Runtime_SetProperty) {
   PropertyAttributes attributes =
       static_cast<PropertyAttributes>(unchecked_attributes);
 
-  StrictMode strict_mode = SLOPPY;
-  if (args.length() == 5) {
-    CONVERT_STRICT_MODE_ARG_CHECKED(strict_mode_arg, 4);
-    strict_mode = strict_mode_arg;
+#ifdef DEBUG
+  bool duplicate;
+  if (key->IsName()) {
+    LookupIterator it(object, Handle<Name>::cast(key),
+                      LookupIterator::CHECK_OWN_REAL);
+    JSReceiver::GetPropertyAttributes(&it);
+    duplicate = it.IsFound();
+  } else {
+    uint32_t index = 0;
+    RUNTIME_ASSERT(key->ToArrayIndex(&index));
+    duplicate = JSReceiver::HasOwnElement(object, index);
   }
+  RUNTIME_ASSERT(!duplicate);
+#endif
 
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::SetObjectProperty(
-          isolate, object, key, value, attributes, strict_mode));
+      Runtime::DefineObjectProperty(object, key, value, attributes));
+  return *result;
+}
+
+
+RUNTIME_FUNCTION(Runtime_AddPropertyForTemplate) {
+  HandleScope scope(isolate);
+  RUNTIME_ASSERT(args.length() == 4);
+
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  CONVERT_SMI_ARG_CHECKED(unchecked_attributes, 3);
+  RUNTIME_ASSERT(
+      (unchecked_attributes & ~(READ_ONLY | DONT_ENUM | DONT_DELETE)) == 0);
+  // Compute attributes.
+  PropertyAttributes attributes =
+      static_cast<PropertyAttributes>(unchecked_attributes);
+
+#ifdef DEBUG
+  bool duplicate;
+  if (key->IsName()) {
+    LookupIterator it(object, Handle<Name>::cast(key),
+                      LookupIterator::CHECK_OWN_REAL);
+    JSReceiver::GetPropertyAttributes(&it);
+    duplicate = it.IsFound();
+  } else {
+    uint32_t index = 0;
+    RUNTIME_ASSERT(key->ToArrayIndex(&index));
+    duplicate = JSReceiver::HasOwnElement(object, index);
+  }
+  if (duplicate) {
+    Handle<Object> args[1] = { key };
+    Handle<Object> error = isolate->factory()->NewTypeError(
+        "duplicate_template_property", HandleVector(args, 1));
+    return isolate->Throw(*error);
+  }
+#endif
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Runtime::DefineObjectProperty(object, key, value, attributes));
+  return *result;
+}
+
+
+RUNTIME_FUNCTION(Runtime_SetProperty) {
+  HandleScope scope(isolate);
+  RUNTIME_ASSERT(args.length() == 4);
+
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  CONVERT_STRICT_MODE_ARG_CHECKED(strict_mode_arg, 3);
+  StrictMode strict_mode = strict_mode_arg;
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Runtime::SetObjectProperty(isolate, object, key, value, strict_mode));
   return *result;
 }
 
@@ -5523,29 +5570,12 @@ RUNTIME_FUNCTION(Runtime_DebugPromiseHandleEpilogue) {
 }
 
 
-// Set an own property, even if it is READ_ONLY.  If the property does not
-// exist, it will be added with attributes NONE.
-RUNTIME_FUNCTION(Runtime_IgnoreAttributesAndSetProperty) {
+RUNTIME_FUNCTION(Runtime_DebugPromiseEvent) {
+  ASSERT(args.length() == 1);
   HandleScope scope(isolate);
-  RUNTIME_ASSERT(args.length() == 3 || args.length() == 4);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
-  // Compute attributes.
-  PropertyAttributes attributes = NONE;
-  if (args.length() == 4) {
-    CONVERT_SMI_ARG_CHECKED(unchecked_value, 3);
-    // Only attribute bits should be set.
-    RUNTIME_ASSERT(
-        (unchecked_value & ~(READ_ONLY | DONT_ENUM | DONT_DELETE)) == 0);
-    attributes = static_cast<PropertyAttributes>(unchecked_value);
-  }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          object, name, value, attributes));
-  return *result;
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, data, 0);
+  isolate->debug()->OnPromiseEvent(data);
+  return isolate->heap()->undefined_value();
 }
 
 
@@ -6298,8 +6328,8 @@ RUNTIME_FUNCTION(Runtime_StringParseFloat) {
   CONVERT_ARG_HANDLE_CHECKED(String, subject, 0);
 
   subject = String::Flatten(subject);
-  double value = StringToDouble(
-      isolate->unicode_cache(), *subject, ALLOW_TRAILING_JUNK, OS::nan_value());
+  double value = StringToDouble(isolate->unicode_cache(), *subject,
+                                ALLOW_TRAILING_JUNK, base::OS::nan_value());
 
   return *isolate->factory()->NewNumber(value);
 }
@@ -8143,8 +8173,8 @@ RUNTIME_FUNCTION(Runtime_FunctionBindArguments) {
       static_cast<PropertyAttributes>(DONT_DELETE | DONT_ENUM | READ_ONLY);
   RETURN_FAILURE_ON_EXCEPTION(
       isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(bound_function, length_string,
-                                               new_length, attr));
+      JSObject::SetOwnPropertyIgnoreAttributes(
+          bound_function, length_string, new_length, attr));
   return *bound_function;
 }
 
@@ -8248,7 +8278,7 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
       // instead of a new JSFunction object. This way, errors are
       // reported the same way whether or not 'Function' is called
       // using 'new'.
-      return isolate->context()->global_object();
+      return isolate->context()->global_proxy();
     }
   }
 
@@ -8574,7 +8604,7 @@ RUNTIME_FUNCTION(Runtime_GetOptimizationStatus) {
       sync_with_compiler_thread) {
     while (function->IsInOptimizationQueue()) {
       isolate->optimizing_compiler_thread()->InstallOptimizedFunctions();
-      OS::Sleep(50);
+      base::OS::Sleep(50);
     }
   }
   if (FLAG_always_opt) {
@@ -9561,7 +9591,7 @@ RUNTIME_FUNCTION(Runtime_DateCurrentTime) {
     millis = 1388534400000.0;  // Jan 1 2014 00:00:00 GMT+0000
     millis += std::floor(isolate->heap()->synthetic_time());
   } else {
-    millis = std::floor(OS::TimeCurrentMillis());
+    millis = std::floor(base::OS::TimeCurrentMillis());
   }
   return *isolate->factory()->NewNumber(millis);
 }
@@ -11418,7 +11448,7 @@ static MaybeHandle<JSObject> MaterializeStackLocalsWithFrameInspector(
 
     RETURN_ON_EXCEPTION(
         isolate,
-        Runtime::SetObjectProperty(isolate, target, name, value, NONE, SLOPPY),
+        Runtime::SetObjectProperty(isolate, target, name, value, SLOPPY),
         JSObject);
   }
 
@@ -11431,7 +11461,7 @@ static MaybeHandle<JSObject> MaterializeStackLocalsWithFrameInspector(
 
     RETURN_ON_EXCEPTION(
         isolate,
-        Runtime::SetObjectProperty(isolate, target, name, value, NONE, SLOPPY),
+        Runtime::SetObjectProperty(isolate, target, name, value, SLOPPY),
         JSObject);
   }
 
@@ -11520,8 +11550,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeLocalContext(
             isolate, value, Object::GetPropertyOrElement(ext, key), JSObject);
         RETURN_ON_EXCEPTION(
             isolate,
-            Runtime::SetObjectProperty(
-                isolate, target, key, value, NONE, SLOPPY),
+            Runtime::SetObjectProperty(isolate, target, key, value, SLOPPY),
             JSObject);
       }
     }
@@ -11626,7 +11655,7 @@ static bool SetLocalVariableValue(Isolate* isolate,
           // We don't expect this to do anything except replacing
           // property value.
           Runtime::SetObjectProperty(isolate, ext, variable_name, new_value,
-                                     NONE, SLOPPY).Assert();
+                                     SLOPPY).Assert();
           return true;
         }
       }
@@ -11677,8 +11706,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeClosure(
           isolate, value, Object::GetPropertyOrElement(ext, key), JSObject);
       RETURN_ON_EXCEPTION(
           isolate,
-          Runtime::SetObjectProperty(
-              isolate, closure_scope, key, value, NONE, SLOPPY),
+          Runtime::DefineObjectProperty(closure_scope, key, value, NONE),
           JSObject);
     }
   }
@@ -11709,8 +11737,8 @@ static bool SetClosureVariableValue(Isolate* isolate,
     Handle<JSObject> ext(JSObject::cast(context->extension()));
     if (JSReceiver::HasProperty(ext, variable_name)) {
       // We don't expect this to do anything except replacing property value.
-      Runtime::SetObjectProperty(isolate, ext, variable_name, new_value,
-                                 NONE, SLOPPY).Assert();
+      Runtime::DefineObjectProperty(
+          ext, variable_name, new_value, NONE).Assert();
       return true;
     }
   }
@@ -11732,8 +11760,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeCatchScope(
       isolate->factory()->NewJSObject(isolate->object_function());
   RETURN_ON_EXCEPTION(
       isolate,
-      Runtime::SetObjectProperty(isolate, catch_scope, name, thrown_object,
-                                 NONE, SLOPPY),
+      Runtime::DefineObjectProperty(catch_scope, name, thrown_object, NONE),
       JSObject);
   return catch_scope;
 }
@@ -12796,8 +12823,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeArgumentsObject(
   Handle<String> arguments_str = isolate->factory()->arguments_string();
   RETURN_ON_EXCEPTION(
       isolate,
-      Runtime::SetObjectProperty(
-          isolate, target, arguments_str, arguments, ::NONE, SLOPPY),
+      Runtime::DefineObjectProperty(target, arguments_str, arguments, NONE),
       JSObject);
   return target;
 }
@@ -13221,7 +13247,7 @@ RUNTIME_FUNCTION(Runtime_DebugSetScriptSource) {
 RUNTIME_FUNCTION(Runtime_SystemBreak) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
-  OS::DebugBreak();
+  base::OS::DebugBreak();
   return isolate->heap()->undefined_value();
 }
 
@@ -13823,18 +13849,10 @@ RUNTIME_FUNCTION(Runtime_GetLanguageTagVariants) {
     }
 
     Handle<JSObject> result = factory->NewJSObject(isolate->object_function());
-    RETURN_FAILURE_ON_EXCEPTION(isolate,
-        JSObject::SetOwnPropertyIgnoreAttributes(
-            result,
-            maximized,
-            factory->NewStringFromAsciiChecked(base_max_locale),
-            NONE));
-    RETURN_FAILURE_ON_EXCEPTION(isolate,
-        JSObject::SetOwnPropertyIgnoreAttributes(
-            result,
-            base,
-            factory->NewStringFromAsciiChecked(base_locale),
-            NONE));
+    Handle<String> value = factory->NewStringFromAsciiChecked(base_max_locale);
+    JSObject::AddProperty(result, maximized, value, NONE);
+    value = factory->NewStringFromAsciiChecked(base_locale);
+    JSObject::AddProperty(result, base, value, NONE);
     output->set(i, *result);
   }
 
@@ -13951,12 +13969,10 @@ RUNTIME_FUNCTION(Runtime_CreateDateTimeFormat) {
 
   local_object->SetInternalField(0, reinterpret_cast<Smi*>(date_format));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("dateFormat"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("dateFormat");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   // Make object handle weak so we can delete the data format once GC kicks in.
   Handle<Object> wrapper = isolate->global_handles()->Create(*local_object);
@@ -14050,12 +14066,10 @@ RUNTIME_FUNCTION(Runtime_CreateNumberFormat) {
 
   local_object->SetInternalField(0, reinterpret_cast<Smi*>(number_format));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("numberFormat"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("numberFormat");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   Handle<Object> wrapper = isolate->global_handles()->Create(*local_object);
   GlobalHandles::MakeWeak(wrapper.location(),
@@ -14158,12 +14172,10 @@ RUNTIME_FUNCTION(Runtime_CreateCollator) {
 
   local_object->SetInternalField(0, reinterpret_cast<Smi*>(collator));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("collator"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("collator");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   Handle<Object> wrapper = isolate->global_handles()->Create(*local_object);
   GlobalHandles::MakeWeak(wrapper.location(),
@@ -14264,12 +14276,10 @@ RUNTIME_FUNCTION(Runtime_CreateBreakIterator) {
   // Make sure that the pointer to adopted text is NULL.
   local_object->SetInternalField(1, reinterpret_cast<Smi*>(NULL));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("breakIterator"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("breakIterator");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   // Make object handle weak so we can delete the break iterator once GC kicks
   // in.
@@ -14486,9 +14496,9 @@ RUNTIME_FUNCTION(Runtime_Abort) {
   CONVERT_SMI_ARG_CHECKED(message_id, 0);
   const char* message = GetBailoutReason(
       static_cast<BailoutReason>(message_id));
-  OS::PrintError("abort: %s\n", message);
+  base::OS::PrintError("abort: %s\n", message);
   isolate->PrintStack(stderr);
-  OS::Abort();
+  base::OS::Abort();
   UNREACHABLE();
   return NULL;
 }
@@ -14498,9 +14508,9 @@ RUNTIME_FUNCTION(Runtime_AbortJS) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(String, message, 0);
-  OS::PrintError("abort: %s\n", message->ToCString().get());
+  base::OS::PrintError("abort: %s\n", message->ToCString().get());
   isolate->PrintStack(stderr);
-  OS::Abort();
+  base::OS::Abort();
   UNREACHABLE();
   return NULL;
 }

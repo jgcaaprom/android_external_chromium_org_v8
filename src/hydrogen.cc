@@ -1513,13 +1513,23 @@ void HGraphBuilder::BuildKeyedIndexCheck(HValue* key,
               Token::BIT_AND,
               instance_type,
               Add<HConstant>(static_cast<int>(kIsNotInternalizedMask)));
-          DeoptimizeIf<HCompareNumericAndBranch>(
-              not_internalized_bit,
-              graph()->GetConstant0(),
-              Token::NE,
-              "BuildKeyedIndexCheck: string isn't internalized");
-          // Key guaranteed to be a unqiue string
+
+          IfBuilder internalized(this);
+          internalized.If<HCompareNumericAndBranch>(not_internalized_bit,
+                                                    graph()->GetConstant0(),
+                                                    Token::EQ);
+          internalized.Then();
           Push(key);
+
+          internalized.Else();
+          Add<HPushArguments>(key);
+          HValue* intern_key = Add<HCallRuntime>(
+              isolate()->factory()->empty_string(),
+              Runtime::FunctionForId(Runtime::kInternalizeString), 1);
+          Push(intern_key);
+
+          internalized.End();
+          // Key guaranteed to be a unique string
         }
         string_index_if.JoinContinuation(join_continuation);
       }
@@ -7566,7 +7576,7 @@ int HOptimizedGraphBuilder::InliningAstSize(Handle<JSFunction> target) {
     TraceInline(target, caller, "target not inlineable");
     return kNotInlinable;
   }
-  if (target_shared->dont_inline()) {
+  if (target_shared->DisableOptimizationReason() != kNoReason) {
     TraceInline(target, caller, "target contains unsupported syntax [early]");
     return kNotInlinable;
   }
@@ -7653,8 +7663,7 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
     TraceInline(target, caller, "target AST is too large [late]");
     return false;
   }
-  AstProperties::Flags* flags(function->flags());
-  if (flags->Contains(kDontInline) || function->dont_optimize()) {
+  if (function->dont_optimize()) {
     TraceInline(target, caller, "target contains unsupported syntax [late]");
     return false;
   }
@@ -7738,19 +7747,19 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
   HConstant* context = Add<HConstant>(Handle<Context>(target->context()));
   inner_env->BindContext(context);
 
-  HArgumentsObject* arguments_object = NULL;
-
-  // If the function uses arguments object create and bind one, also copy
+  // Create a dematerialized arguments object for the function, also copy the
   // current arguments values to use them for materialization.
+  HEnvironment* arguments_env = inner_env->arguments_environment();
+  int parameter_count = arguments_env->parameter_count();
+  HArgumentsObject* arguments_object = Add<HArgumentsObject>(parameter_count);
+  for (int i = 0; i < parameter_count; i++) {
+    arguments_object->AddArgument(arguments_env->Lookup(i), zone());
+  }
+
+  // If the function uses arguments object then bind bind one.
   if (function->scope()->arguments() != NULL) {
     ASSERT(function->scope()->arguments()->IsStackAllocated());
-    HEnvironment* arguments_env = inner_env->arguments_environment();
-    int arguments_count = arguments_env->parameter_count();
-    arguments_object = Add<HArgumentsObject>(arguments_count);
     inner_env->Bind(function->scope()->arguments(), arguments_object);
-    for (int i = 0; i < arguments_count; i++) {
-      arguments_object->AddArgument(arguments_env->Lookup(i), zone());
-    }
   }
 
   // Capture the state before invoking the inlined function for deopt in the
@@ -9945,7 +9954,7 @@ HInstruction* HOptimizedGraphBuilder::BuildStringCharCodeAt(
       int32_t i = c_index->NumberValueAsInteger32();
       Handle<String> s = c_string->StringValue();
       if (i < 0 || i >= s->length()) {
-        return New<HConstant>(OS::nan_value());
+        return New<HConstant>(base::OS::nan_value());
       }
       return New<HConstant>(s->Get(i));
     }
@@ -11310,30 +11319,42 @@ void HOptimizedGraphBuilder::GenerateIsConstructCall(CallRuntime* call) {
 
 // Support for arguments.length and arguments[?].
 void HOptimizedGraphBuilder::GenerateArgumentsLength(CallRuntime* call) {
-  // Our implementation of arguments (based on this stack frame or an
-  // adapter below it) does not work for inlined functions.  This runtime
-  // function is blacklisted by AstNode::IsInlineable.
-  ASSERT(function_state()->outer() == NULL);
   ASSERT(call->arguments()->length() == 0);
-  HInstruction* elements = Add<HArgumentsElements>(false);
-  HArgumentsLength* result = New<HArgumentsLength>(elements);
+  HInstruction* result = NULL;
+  if (function_state()->outer() == NULL) {
+    HInstruction* elements = Add<HArgumentsElements>(false);
+    result = New<HArgumentsLength>(elements);
+  } else {
+    // Number of arguments without receiver.
+    int argument_count = environment()->
+        arguments_environment()->parameter_count() - 1;
+    result = New<HConstant>(argument_count);
+  }
   return ast_context()->ReturnInstruction(result, call->id());
 }
 
 
 void HOptimizedGraphBuilder::GenerateArguments(CallRuntime* call) {
-  // Our implementation of arguments (based on this stack frame or an
-  // adapter below it) does not work for inlined functions.  This runtime
-  // function is blacklisted by AstNode::IsInlineable.
-  ASSERT(function_state()->outer() == NULL);
   ASSERT(call->arguments()->length() == 1);
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* index = Pop();
-  HInstruction* elements = Add<HArgumentsElements>(false);
-  HInstruction* length = Add<HArgumentsLength>(elements);
-  HInstruction* checked_index = Add<HBoundsCheck>(index, length);
-  HAccessArgumentsAt* result = New<HAccessArgumentsAt>(
-      elements, length, checked_index);
+  HInstruction* result = NULL;
+  if (function_state()->outer() == NULL) {
+    HInstruction* elements = Add<HArgumentsElements>(false);
+    HInstruction* length = Add<HArgumentsLength>(elements);
+    HInstruction* checked_index = Add<HBoundsCheck>(index, length);
+    result = New<HAccessArgumentsAt>(elements, length, checked_index);
+  } else {
+    EnsureArgumentsArePushedForAccess();
+
+    // Number of arguments without receiver.
+    HInstruction* elements = function_state()->arguments_elements();
+    int argument_count = environment()->
+        arguments_environment()->parameter_count() - 1;
+    HInstruction* length = Add<HConstant>(argument_count);
+    HInstruction* checked_key = Add<HBoundsCheck>(index, length);
+    result = New<HAccessArgumentsAt>(elements, length, checked_key);
+  }
   return ast_context()->ReturnInstruction(result, call->id());
 }
 
@@ -12035,7 +12056,8 @@ void HTracer::TraceCompilation(CompilationInfo* info) {
     PrintStringProperty("name", CodeStub::MajorName(major_key, false));
     PrintStringProperty("method", "stub");
   }
-  PrintLongProperty("date", static_cast<int64_t>(OS::TimeCurrentMillis()));
+  PrintLongProperty("date",
+                    static_cast<int64_t>(base::OS::TimeCurrentMillis()));
 }
 
 
@@ -12282,7 +12304,7 @@ void HStatistics::Initialize(CompilationInfo* info) {
 
 void HStatistics::Print() {
   PrintF("Timing results:\n");
-  TimeDelta sum;
+  base::TimeDelta sum;
   for (int i = 0; i < times_.length(); ++i) {
     sum += times_[i];
   }
@@ -12300,7 +12322,7 @@ void HStatistics::Print() {
 
   PrintF("----------------------------------------"
          "---------------------------------------\n");
-  TimeDelta total = create_graph_ + optimize_graph_ + generate_code_;
+  base::TimeDelta total = create_graph_ + optimize_graph_ + generate_code_;
   PrintF("%32s %8.3f ms / %4.1f %% \n",
          "Create graph",
          create_graph_.InMillisecondsF(),
@@ -12333,7 +12355,8 @@ void HStatistics::Print() {
 }
 
 
-void HStatistics::SaveTiming(const char* name, TimeDelta time, unsigned size) {
+void HStatistics::SaveTiming(const char* name, base::TimeDelta time,
+                             unsigned size) {
   total_size_ += size;
   for (int i = 0; i < names_.length(); ++i) {
     if (strcmp(names_[i], name) == 0) {

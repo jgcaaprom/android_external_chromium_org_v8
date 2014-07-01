@@ -87,34 +87,6 @@ void RegExpConstructResultStub::InitializeInterfaceDescriptor(
 }
 
 
-void LoadFieldStub::InitializeInterfaceDescriptor(
-    CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { r0 };
-  descriptor->Initialize(ARRAY_SIZE(registers), registers);
-}
-
-
-void KeyedLoadFieldStub::InitializeInterfaceDescriptor(
-    CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { r1 };
-  descriptor->Initialize(ARRAY_SIZE(registers), registers);
-}
-
-
-void StringLengthStub::InitializeInterfaceDescriptor(
-    CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { r0, r2 };
-  descriptor->Initialize(ARRAY_SIZE(registers), registers);
-}
-
-
-void KeyedStringLengthStub::InitializeInterfaceDescriptor(
-    CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { r1, r0 };
-  descriptor->Initialize(ARRAY_SIZE(registers), registers);
-}
-
-
 void KeyedStoreFastElementStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
   Register registers[] = { r2, r1, r0 };
@@ -1884,25 +1856,15 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
 
 void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
   Label miss;
-  Register receiver;
+  Register receiver = LoadIC::ReceiverRegister();
+  Register name = LoadIC::NameRegister();
+
+  ASSERT(kind() == Code::LOAD_IC ||
+         kind() == Code::KEYED_LOAD_IC);
+
   if (kind() == Code::KEYED_LOAD_IC) {
-    // ----------- S t a t e -------------
-    //  -- lr    : return address
-    //  -- r0    : key
-    //  -- r1    : receiver
-    // -----------------------------------
-    __ cmp(r0, Operand(isolate()->factory()->prototype_string()));
+    __ cmp(name, Operand(isolate()->factory()->prototype_string()));
     __ b(ne, &miss);
-    receiver = r1;
-  } else {
-    ASSERT(kind() == Code::LOAD_IC);
-    // ----------- S t a t e -------------
-    //  -- r2    : name
-    //  -- lr    : return address
-    //  -- r0    : receiver
-    //  -- sp[0] : receiver
-    // -----------------------------------
-    receiver = r0;
   }
 
   StubCompiler::GenerateLoadFunctionPrototype(masm, receiver, r3, r4, &miss);
@@ -2296,7 +2258,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // time or if regexp entry in generated code is turned off runtime switch or
   // at compilation.
 #ifdef V8_INTERPRETED_REGEXP
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kRegExpExecRT, 4, 1);
 #else  // V8_INTERPRETED_REGEXP
 
   // Stack frame on entry.

@@ -8,6 +8,7 @@
 #include "src/allocation.h"
 #include "src/assert-scope.h"
 #include "src/builtins.h"
+#include "src/checks.h"
 #include "src/elements-kind.h"
 #include "src/field-index.h"
 #include "src/flags.h"
@@ -15,7 +16,6 @@
 #include "src/property-details.h"
 #include "src/smart-pointers.h"
 #include "src/unicode-inl.h"
-#include "src/v8checks.h"
 #include "src/zone.h"
 
 #if V8_TARGET_ARCH_ARM
@@ -2153,6 +2153,13 @@ class JSObject: public JSReceiver {
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED,
       ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
+  static void AddProperty(Handle<JSObject> object,
+                          Handle<Name> key,
+                          Handle<Object> value,
+                          PropertyAttributes attributes,
+                          ValueType value_type = OPTIMAL_REPRESENTATION,
+                          StoreMode mode = ALLOW_AS_CONSTANT);
+
   // Extend the receiver with a single fast property appeared first in the
   // passed map. This also extends the property backing store if necessary.
   static void AllocateStorageForMap(Handle<JSObject> object, Handle<Map> map);
@@ -2750,7 +2757,7 @@ class JSObject: public JSReceiver {
       StrictMode strict_mode);
 
   // Add a property to an object.
-  MUST_USE_RESULT static MaybeHandle<Object> AddProperty(
+  MUST_USE_RESULT static MaybeHandle<Object> AddPropertyInternal(
       Handle<JSObject> object,
       Handle<Name> name,
       Handle<Object> value,
@@ -7223,9 +7230,6 @@ class SharedFunctionInfo: public HeapObject {
   // Is this a function or top-level/eval code.
   DECL_BOOLEAN_ACCESSORS(is_function)
 
-  // Indicates that the function cannot be inlined.
-  DECL_BOOLEAN_ACCESSORS(dont_inline)
-
   // Indicates that code for this function cannot be cached.
   DECL_BOOLEAN_ACCESSORS(dont_cache)
 
@@ -7285,11 +7289,6 @@ class SharedFunctionInfo: public HeapObject {
     set_opt_count_and_bailout_reason(
         DisabledOptimizationReasonBits::update(opt_count_and_bailout_reason(),
                                                reason));
-  }
-
-  void set_dont_optimize_reason(BailoutReason reason) {
-    set_bailout_reason(reason);
-    set_dont_inline(reason != kNoReason);
   }
 
   // Check whether or not this function is inlineable.
@@ -7434,7 +7433,6 @@ class SharedFunctionInfo: public HeapObject {
     kIsAnonymous,
     kNameShouldPrintAsAnonymous,
     kIsFunction,
-    kDontInline,
     kDontCache,
     kDontFlush,
     kIsGenerator,

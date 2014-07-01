@@ -19,8 +19,9 @@ enum DebugEvent {
   NewFunction = 3,
   BeforeCompile = 4,
   AfterCompile  = 5,
-  ScriptCollected = 6,
-  BreakForCommand = 7
+  CompileError = 6,
+  PromiseEvent = 7,
+  BreakForCommand = 8
 };
 
 

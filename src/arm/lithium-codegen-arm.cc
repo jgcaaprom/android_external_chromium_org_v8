@@ -841,7 +841,7 @@ void LCodeGen::DeoptimizeIf(Condition condition,
     __ mov(scratch, Operand(count));
     __ ldr(r1, MemOperand(scratch));
     __ sub(r1, r1, Operand(1), SetCC);
-    __ movw(r1, FLAG_deopt_every_n_times, eq);
+    __ mov(r1, Operand(FLAG_deopt_every_n_times), LeaveCC, eq);
     __ str(r1, MemOperand(scratch));
     __ pop(r1);
 
@@ -2950,10 +2950,10 @@ void LCodeGen::DoLoadGlobalCell(LLoadGlobalCell* instr) {
 
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   ASSERT(ToRegister(instr->context()).is(cp));
-  ASSERT(ToRegister(instr->global_object()).is(r0));
+  ASSERT(ToRegister(instr->global_object()).is(LoadIC::ReceiverRegister()));
   ASSERT(ToRegister(instr->result()).is(r0));
 
-  __ mov(r2, Operand(instr->name()));
+  __ mov(LoadIC::NameRegister(), Operand(instr->name()));
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), mode);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
@@ -3069,11 +3069,11 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
 
 void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   ASSERT(ToRegister(instr->context()).is(cp));
-  ASSERT(ToRegister(instr->object()).is(r0));
+  ASSERT(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
   ASSERT(ToRegister(instr->result()).is(r0));
 
   // Name is always in r2.
-  __ mov(r2, Operand(instr->name()));
+  __ mov(LoadIC::NameRegister(), Operand(instr->name()));
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), NOT_CONTEXTUAL);
   CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
 }
@@ -3375,8 +3375,8 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
 
 void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   ASSERT(ToRegister(instr->context()).is(cp));
-  ASSERT(ToRegister(instr->object()).is(r1));
-  ASSERT(ToRegister(instr->key()).is(r0));
+  ASSERT(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
+  ASSERT(ToRegister(instr->key()).is(LoadIC::NameRegister()));
 
   Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
   CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);

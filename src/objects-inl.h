@@ -2183,9 +2183,9 @@ inline double FixedDoubleArray::hole_nan_as_double() {
 
 
 inline double FixedDoubleArray::canonical_not_the_hole_nan_as_double() {
-  ASSERT(BitCast<uint64_t>(OS::nan_value()) != kHoleNanInt64);
-  ASSERT((BitCast<uint64_t>(OS::nan_value()) >> 32) != kHoleNanUpper32);
-  return OS::nan_value();
+  ASSERT(BitCast<uint64_t>(base::OS::nan_value()) != kHoleNanInt64);
+  ASSERT((BitCast<uint64_t>(base::OS::nan_value()) >> 32) != kHoleNanUpper32);
+  return base::OS::nan_value();
 }
 
 
@@ -3952,11 +3952,11 @@ int32_t Int32ArrayTraits::defaultValue() { return 0; }
 
 
 float Float32ArrayTraits::defaultValue() {
-  return static_cast<float>(OS::nan_value());
+  return static_cast<float>(base::OS::nan_value());
 }
 
 
-double Float64ArrayTraits::defaultValue() { return OS::nan_value(); }
+double Float64ArrayTraits::defaultValue() { return base::OS::nan_value(); }
 
 
 template <class Traits>
@@ -5447,7 +5447,6 @@ BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints,
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, bound, kBoundFunction)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_anonymous, kIsAnonymous)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_function, kIsFunction)
-BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_inline, kDontInline)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_cache, kDontCache)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_flush, kDontFlush)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_generator, kIsGenerator)

@@ -38,6 +38,7 @@
 #include "src/objects.h"
 #include "src/parser.h"
 #include "src/preparser.h"
+#include "src/rewriter.h"
 #include "src/scanner-character-streams.h"
 #include "src/token.h"
 #include "src/utils.h"
@@ -1248,7 +1249,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
             isolate, exception_handle, "message").ToHandleChecked());
 
     if (result == kSuccess) {
-      i::OS::Print(
+      v8::base::OS::Print(
           "Parser failed on:\n"
           "\t%s\n"
           "with error:\n"
@@ -1259,7 +1260,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
     }
 
     if (!data.has_error()) {
-      i::OS::Print(
+      v8::base::OS::Print(
           "Parser failed on:\n"
           "\t%s\n"
           "with error:\n"
@@ -1271,7 +1272,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
     // Check that preparser and parser produce the same error.
     i::Handle<i::String> preparser_message = FormatMessage(&data);
     if (!i::String::Equals(message_string, preparser_message)) {
-      i::OS::Print(
+      v8::base::OS::Print(
           "Expected parser and preparser to produce the same error on:\n"
           "\t%s\n"
           "However, found the following error messages\n"
@@ -1283,7 +1284,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
       CHECK(false);
     }
   } else if (data.has_error()) {
-    i::OS::Print(
+    v8::base::OS::Print(
         "Preparser failed on:\n"
         "\t%s\n"
         "with error:\n"
@@ -1292,7 +1293,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
         source->ToCString().get(), FormatMessage(&data)->ToCString().get());
     CHECK(false);
   } else if (result == kError) {
-    i::OS::Print(
+    v8::base::OS::Print(
         "Expected error on:\n"
         "\t%s\n"
         "However, parser and preparser succeeded",
@@ -2040,7 +2041,7 @@ TEST(DontRegressPreParserDataSizes) {
     CHECK(!data->HasError());
 
     if (data->function_count() != test_cases[i].functions) {
-      i::OS::Print(
+      v8::base::OS::Print(
           "Expected preparse data for program:\n"
           "\t%s\n"
           "to contain %d functions, however, received %d functions.\n",
@@ -2613,4 +2614,160 @@ TEST(RegressionLazyFunctionWithErrorWithArg) {
              "  break p;\n"
              "}\n"
              "this_is_lazy();\n");
+}
+
+
+TEST(InnerAssignment) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::Factory* factory = isolate->factory();
+  i::HandleScope scope(isolate);
+  LocalContext env;
+
+  const char* prefix = "function f() {";
+  const char* midfix = " function g() {";
+  const char* suffix = "}}";
+  struct { const char* source; bool assigned; bool strict; } outers[] = {
+    // Actual assignments.
+    { "var x; var x = 5;", true, false },
+    { "var x; { var x = 5; }", true, false },
+    { "'use strict'; let x; x = 6;", true, true },
+    { "var x = 5; function x() {}", true, false },
+    // Actual non-assignments.
+    { "var x;", false, false },
+    { "var x = 5;", false, false },
+    { "'use strict'; let x;", false, true },
+    { "'use strict'; let x = 6;", false, true },
+    { "'use strict'; var x = 0; { let x = 6; }", false, true },
+    { "'use strict'; var x = 0; { let x; x = 6; }", false, true },
+    { "'use strict'; let x = 0; { let x = 6; }", false, true },
+    { "'use strict'; let x = 0; { let x; x = 6; }", false, true },
+    { "var x; try {} catch (x) { x = 5; }", false, false },
+    { "function x() {}", false, false },
+    // Eval approximation.
+    { "var x; eval('');", true, false },
+    { "eval(''); var x;", true, false },
+    { "'use strict'; let x; eval('');", true, true },
+    { "'use strict'; eval(''); let x;", true, true },
+    // Non-assignments not recognized, because the analysis is approximative.
+    { "var x; var x;", true, false },
+    { "var x = 5; var x;", true, false },
+    { "var x; { var x; }", true, false },
+    { "var x; function x() {}", true, false },
+    { "function x() {}; var x;", true, false },
+    { "var x; try {} catch (x) { var x = 5; }", true, false },
+  };
+  struct { const char* source; bool assigned; bool with; } inners[] = {
+    // Actual assignments.
+    { "x = 1;", true, false },
+    { "x++;", true, false },
+    { "++x;", true, false },
+    { "x--;", true, false },
+    { "--x;", true, false },
+    { "{ x = 1; }", true, false },
+    { "'use strict'; { let x; }; x = 0;", true, false },
+    { "'use strict'; { const x = 1; }; x = 0;", true, false },
+    { "'use strict'; { function x() {} }; x = 0;", true, false },
+    { "with ({}) { x = 1; }", true, true },
+    { "eval('');", true, false },
+    { "'use strict'; { let y; eval('') }", true, false },
+    { "function h() { x = 0; }", true, false },
+    { "(function() { x = 0; })", true, false },
+    { "(function() { x = 0; })", true, false },
+    { "with ({}) (function() { x = 0; })", true, true },
+    // Actual non-assignments.
+    { "", false, false },
+    { "x;", false, false },
+    { "var x;", false, false },
+    { "var x = 8;", false, false },
+    { "var x; x = 8;", false, false },
+    { "'use strict'; let x;", false, false },
+    { "'use strict'; let x = 8;", false, false },
+    { "'use strict'; let x; x = 8;", false, false },
+    { "'use strict'; const x = 8;", false, false },
+    { "function x() {}", false, false },
+    { "function x() { x = 0; }", false, false },
+    { "function h(x) { x = 0; }", false, false },
+    { "'use strict'; { let x; x = 0; }", false, false },
+    { "{ var x; }; x = 0;", false, false },
+    { "with ({}) {}", false, true },
+    { "var x; { with ({}) { x = 1; } }", false, true },
+    { "try {} catch(x) { x = 0; }", false, false },
+    { "try {} catch(x) { with ({}) { x = 1; } }", false, true },
+    // Eval approximation.
+    { "eval('');", true, false },
+    { "function h() { eval(''); }", true, false },
+    { "(function() { eval(''); })", true, false },
+    // Shadowing not recognized because of eval approximation.
+    { "var x; eval('');", true, false },
+    { "'use strict'; let x; eval('');", true, false },
+    { "try {} catch(x) { eval(''); }", true, false },
+    { "function x() { eval(''); }", true, false },
+    { "(function(x) { eval(''); })", true, false },
+  };
+
+  int prefix_len = Utf8LengthHelper(prefix);
+  int midfix_len = Utf8LengthHelper(midfix);
+  int suffix_len = Utf8LengthHelper(suffix);
+  for (unsigned i = 0; i < ARRAY_SIZE(outers); ++i) {
+    const char* outer = outers[i].source;
+    int outer_len = Utf8LengthHelper(outer);
+    for (unsigned j = 0; j < ARRAY_SIZE(inners); ++j) {
+      if (outers[i].strict && inners[j].with) continue;
+      const char* inner = inners[j].source;
+      int inner_len = Utf8LengthHelper(inner);
+      int len = prefix_len + outer_len + midfix_len + inner_len + suffix_len;
+      i::ScopedVector<char> program(len + 1);
+      i::SNPrintF(program, "%s%s%s%s%s", prefix, outer, midfix, inner, suffix);
+      i::Handle<i::String> source =
+          factory->InternalizeUtf8String(program.start());
+      source->PrintOn(stdout);
+      printf("\n");
+
+      i::Handle<i::Script> script = factory->NewScript(source);
+      i::CompilationInfoWithZone info(script);
+      i::Parser parser(&info);
+      parser.set_allow_harmony_scoping(true);
+      CHECK(parser.Parse());
+      CHECK(i::Rewriter::Rewrite(&info));
+      CHECK(i::Scope::Analyze(&info));
+      CHECK(info.function() != NULL);
+
+      i::Scope* scope = info.function()->scope();
+      CHECK_EQ(scope->inner_scopes()->length(), 1);
+      i::Scope* inner_scope = scope->inner_scopes()->at(0);
+      const i::AstRawString* var_name =
+          info.ast_value_factory()->GetOneByteString("x");
+      i::Variable* var = inner_scope->Lookup(var_name);
+      bool expected = outers[i].assigned || inners[j].assigned;
+      CHECK(var != NULL);
+      CHECK(var->is_used() || !expected);
+      CHECK(var->maybe_assigned() == expected);
+    }
+  }
+}
+
+namespace {
+
+int* global_use_counts = NULL;
+
+void MockUseCounterCallback(v8::Isolate* isolate,
+                            v8::Isolate::UseCounterFeature feature) {
+  ++global_use_counts[feature];
+}
+
+}
+
+
+TEST(UseAsmUseCount) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::HandleScope scope(isolate);
+  LocalContext env;
+  int use_counts[v8::Isolate::kUseCounterFeatureCount] = {};
+  global_use_counts = use_counts;
+  CcTest::isolate()->SetUseCounterCallback(MockUseCounterCallback);
+  CompileRun("\"use asm\";\n"
+             "var foo = 1;\n"
+             "\"use asm\";\n"  // Only the first one counts.
+             "function bar() { \"use asm\"; var baz = 1; }");
+  CHECK_EQ(2, use_counts[v8::Isolate::kUseAsm]);
 }

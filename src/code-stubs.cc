@@ -585,9 +585,9 @@ void JSEntryStub::FinishCode(Handle<Code> code) {
 
 void KeyedLoadFastElementStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { KeyedLoadIC::ReceiverRegister(),
-                           KeyedLoadIC::NameRegister() };
-  STATIC_ASSERT(KeyedLoadIC::kRegisterArgumentCount == 2);
+  Register registers[] = { LoadIC::ReceiverRegister(),
+                           LoadIC::NameRegister() };
+  STATIC_ASSERT(LoadIC::kRegisterArgumentCount == 2);
   descriptor->Initialize(ARRAY_SIZE(registers), registers,
                          FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
 }
@@ -595,9 +595,9 @@ void KeyedLoadFastElementStub::InitializeInterfaceDescriptor(
 
 void KeyedLoadDictionaryElementStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { KeyedLoadIC::ReceiverRegister(),
-                           KeyedLoadIC::NameRegister() };
-  STATIC_ASSERT(KeyedLoadIC::kRegisterArgumentCount == 2);
+  Register registers[] = { LoadIC::ReceiverRegister(),
+                           LoadIC::NameRegister() };
+  STATIC_ASSERT(LoadIC::kRegisterArgumentCount == 2);
   descriptor->Initialize(ARRAY_SIZE(registers), registers,
                          FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
 }
@@ -605,12 +605,42 @@ void KeyedLoadDictionaryElementStub::InitializeInterfaceDescriptor(
 
 void KeyedLoadGenericElementStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { KeyedLoadIC::ReceiverRegister(),
-                           KeyedLoadIC::NameRegister() };
-  STATIC_ASSERT(KeyedLoadIC::kRegisterArgumentCount == 2);
+  Register registers[] = { LoadIC::ReceiverRegister(),
+                           LoadIC::NameRegister() };
+  STATIC_ASSERT(LoadIC::kRegisterArgumentCount == 2);
   descriptor->Initialize(
       ARRAY_SIZE(registers), registers,
       Runtime::FunctionForId(Runtime::kKeyedGetProperty)->entry);
+}
+
+
+void LoadFieldStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  Register registers[] = { LoadIC::ReceiverRegister() };
+  descriptor->Initialize(ARRAY_SIZE(registers), registers);
+}
+
+
+void KeyedLoadFieldStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  Register registers[] = { LoadIC::ReceiverRegister() };
+  descriptor->Initialize(ARRAY_SIZE(registers), registers);
+}
+
+
+void StringLengthStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  Register registers[] = { LoadIC::ReceiverRegister(),
+                           LoadIC::NameRegister() };
+  descriptor->Initialize(ARRAY_SIZE(registers), registers);
+}
+
+
+void KeyedStringLengthStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  Register registers[] = { LoadIC::ReceiverRegister(),
+                           LoadIC::NameRegister() };
+  descriptor->Initialize(ARRAY_SIZE(registers), registers);
 }
 
 
