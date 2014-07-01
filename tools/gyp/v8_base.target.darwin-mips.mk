@@ -51,7 +51,6 @@ LOCAL_SRC_FILES := \
 	v8/src/conversions.cc \
 	v8/src/counters.cc \
 	v8/src/cpu-profiler.cc \
-	v8/src/cpu.cc \
 	v8/src/data-flow.cc \
 	v8/src/date.cc \
 	v8/src/dateparser.cc \
@@ -132,11 +131,8 @@ LOCAL_SRC_FILES := \
 	v8/src/objects-visiting.cc \
 	v8/src/objects.cc \
 	v8/src/optimizing-compiler-thread.cc \
+	v8/src/ostreams.cc \
 	v8/src/parser.cc \
-	v8/src/platform/time.cc \
-	v8/src/platform/condition-variable.cc \
-	v8/src/platform/mutex.cc \
-	v8/src/platform/semaphore.cc \
 	v8/src/preparse-data.cc \
 	v8/src/preparser.cc \
 	v8/src/prettyprinter.cc \
@@ -171,7 +167,6 @@ LOCAL_SRC_FILES := \
 	v8/src/typing.cc \
 	v8/src/unicode.cc \
 	v8/src/utils.cc \
-	v8/src/utils/random-number-generator.cc \
 	v8/src/v8.cc \
 	v8/src/v8threads.cc \
 	v8/src/variables.cc \
@@ -195,9 +190,7 @@ LOCAL_SRC_FILES := \
 	v8/src/mips/macro-assembler-mips.cc \
 	v8/src/mips/regexp-macro-assembler-mips.cc \
 	v8/src/mips/simulator-mips.cc \
-	v8/src/mips/stub-cache-mips.cc \
-	v8/src/platform-posix.cc \
-	v8/src/platform-linux.cc
+	v8/src/mips/stub-cache-mips.cc
 
 
 # Flags passed to both C and C++ files.

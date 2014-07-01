@@ -25,7 +25,16 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	v8/src/base/atomicops_internals_x86_gcc.cc \
-	v8/src/base/once.cc
+	v8/src/base/cpu.cc \
+	v8/src/base/logging.cc \
+	v8/src/base/once.cc \
+	v8/src/base/platform/time.cc \
+	v8/src/base/platform/condition-variable.cc \
+	v8/src/base/platform/mutex.cc \
+	v8/src/base/platform/semaphore.cc \
+	v8/src/base/utils/random-number-generator.cc \
+	v8/src/base/platform/platform-posix.cc \
+	v8/src/base/platform/platform-linux.cc
 
 
 # Flags passed to both C and C++ files.
