@@ -113,6 +113,9 @@ LOCAL_SRC_FILES := \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
 	v8/src/jsregexp.cc \
+	v8/src/libplatform/default-platform.cc \
+	v8/src/libplatform/task-queue.cc \
+	v8/src/libplatform/worker-thread.cc \
 	v8/src/lithium-allocator.cc \
 	v8/src/lithium-codegen.cc \
 	v8/src/lithium.cc \
