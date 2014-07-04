@@ -2264,7 +2264,7 @@ static void CallFunctionNoFeedback(MacroAssembler* masm,
     // Load the receiver from the stack.
     __ mov(eax, Operand(esp, (argc + 1) * kPointerSize));
 
-    if (needs_checks) {
+    if (call_as_method) {
       __ JumpIfSmi(eax, &wrap);
 
       __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);

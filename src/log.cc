@@ -1972,15 +1972,16 @@ void Logger::LogAccessorCallbacks() {
 }
 
 
-static void AddIsolateIdIfNeeded(OStream& os,  // NOLINT
-                                 Isolate* isolate) {
-  if (FLAG_logfile_per_isolate) os << "isolate-" << isolate << "-";
+static void AddIsolateIdIfNeeded(Isolate* isolate, StringStream* stream) {
+  if (FLAG_logfile_per_isolate) stream->Add("isolate-%p-", isolate);
 }
 
 
-static void PrepareLogFileName(OStream& os,  // NOLINT
-                               Isolate* isolate, const char* file_name) {
-  AddIsolateIdIfNeeded(os, isolate);
+static SmartArrayPointer<const char> PrepareLogFileName(
+    Isolate* isolate, const char* file_name) {
+  HeapStringAllocator allocator;
+  StringStream stream(&allocator);
+  AddIsolateIdIfNeeded(isolate, &stream);
   for (const char* p = file_name; *p; p++) {
     if (*p == '%') {
       p++;
@@ -1991,25 +1992,29 @@ static void PrepareLogFileName(OStream& os,  // NOLINT
           p--;
           break;
         case 'p':
-          os << base::OS::GetCurrentProcessId();
+          stream.Add("%d", base::OS::GetCurrentProcessId());
           break;
-        case 't':
+        case 't': {
           // %t expands to the current time in milliseconds.
-          os << static_cast<int64_t>(base::OS::TimeCurrentMillis());
+          double time = base::OS::TimeCurrentMillis();
+          stream.Add("%.0f", FmtElm(time));
           break;
+        }
         case '%':
           // %% expands (contracts really) to %.
-          os << '%';
+          stream.Put('%');
           break;
         default:
           // All other %'s expand to themselves.
-          os << '%' << *p;
+          stream.Put('%');
+          stream.Put(*p);
           break;
       }
     } else {
-      os << *p;
+      stream.Put(*p);
     }
   }
+  return SmartArrayPointer<const char>(stream.ToCString());
 }
 
 
@@ -2023,9 +2028,9 @@ bool Logger::SetUp(Isolate* isolate) {
     FLAG_log_snapshot_positions = true;
   }
 
-  OStringStream log_file_name;
-  PrepareLogFileName(log_file_name, isolate, FLAG_logfile);
-  log_->Initialize(log_file_name.c_str());
+  SmartArrayPointer<const char> log_file_name =
+      PrepareLogFileName(isolate, FLAG_logfile);
+  log_->Initialize(log_file_name.get());
 
 
   if (FLAG_perf_basic_prof) {
@@ -2039,7 +2044,7 @@ bool Logger::SetUp(Isolate* isolate) {
   }
 
   if (FLAG_ll_prof) {
-    ll_logger_ = new LowLevelLogger(log_file_name.c_str());
+    ll_logger_ = new LowLevelLogger(log_file_name.get());
     addCodeEventListener(ll_logger_);
   }
 

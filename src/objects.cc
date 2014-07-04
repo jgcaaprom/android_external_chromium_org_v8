@@ -1371,35 +1371,37 @@ void Map::PrintGeneralization(FILE* file,
                               Representation new_representation,
                               HeapType* old_field_type,
                               HeapType* new_field_type) {
-  OFStream os(file);
-  os << "[generalizing ";
+  PrintF(file, "[generalizing ");
   constructor_name()->PrintOn(file);
-  os << "] ";
+  PrintF(file, "] ");
   Name* name = instance_descriptors()->GetKey(modify_index);
   if (name->IsString()) {
     String::cast(name)->PrintOn(file);
   } else {
-    os << "{symbol " << static_cast<void*>(name) << "}";
+    PrintF(file, "{symbol %p}", static_cast<void*>(name));
   }
-  os << ":";
+  PrintF(file, ":");
   if (constant_to_field) {
-    os << "c";
+    PrintF(file, "c");
   } else {
-    os << old_representation.Mnemonic() << "{";
-    old_field_type->PrintTo(os, HeapType::SEMANTIC_DIM);
-    os << "}";
+    PrintF(file, "%s", old_representation.Mnemonic());
+    PrintF(file, "{");
+    old_field_type->TypePrint(file, HeapType::SEMANTIC_DIM);
+    PrintF(file, "}");
   }
-  os << "->" << new_representation.Mnemonic() << "{";
-  new_field_type->PrintTo(os, HeapType::SEMANTIC_DIM);
-  os << "} (";
+  PrintF(file, "->%s", new_representation.Mnemonic());
+  PrintF(file, "{");
+  new_field_type->TypePrint(file, HeapType::SEMANTIC_DIM);
+  PrintF(file, "}");
+  PrintF(file, " (");
   if (strlen(reason) > 0) {
-    os << reason;
+    PrintF(file, "%s", reason);
   } else {
-    os << "+" << (descriptors - split) << " maps";
+    PrintF(file, "+%i maps", descriptors - split);
   }
-  os << ") [";
+  PrintF(file, ") [");
   JavaScriptFrame::PrintTop(GetIsolate(), file, false, true);
-  os << "]\n";
+  PrintF(file, "]\n");
 }
 
 
@@ -11173,9 +11175,7 @@ void Code::PrintDeoptLocation(FILE* out, int bailout_id) {
       if ((bailout_id == Deoptimizer::GetDeoptimizationId(
               GetIsolate(), info->target_address(), Deoptimizer::EAGER)) ||
           (bailout_id == Deoptimizer::GetDeoptimizationId(
-              GetIsolate(), info->target_address(), Deoptimizer::SOFT)) ||
-          (bailout_id == Deoptimizer::GetDeoptimizationId(
-              GetIsolate(), info->target_address(), Deoptimizer::LAZY))) {
+              GetIsolate(), info->target_address(), Deoptimizer::SOFT))) {
         CHECK(RelocInfo::IsRuntimeEntry(info->rmode()));
         PrintF(out, "            %s\n", last_comment);
         return;

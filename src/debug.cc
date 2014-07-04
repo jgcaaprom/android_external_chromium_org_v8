@@ -1226,7 +1226,7 @@ void Debug::FloodBoundFunctionWithOneShot(Handle<JSFunction> function) {
                         isolate_);
 
   if (!bindee.is_null() && bindee->IsJSFunction() &&
-      !JSFunction::cast(*bindee)->IsFromNativeScript()) {
+      !JSFunction::cast(*bindee)->IsNative()) {
     Handle<JSFunction> bindee_function(JSFunction::cast(*bindee));
     Debug::FloodWithOneShot(bindee_function);
   }
@@ -1447,8 +1447,7 @@ void Debug::PrepareStep(StepAction step_action,
       frames_it.Advance();
     }
     // Skip builtin functions on the stack.
-    while (!frames_it.done() &&
-           frames_it.frame()->function()->IsFromNativeScript()) {
+    while (!frames_it.done() && frames_it.frame()->function()->IsNative()) {
       frames_it.Advance();
     }
     // Step out: If there is a JavaScript caller frame, we need to
@@ -1535,7 +1534,7 @@ void Debug::PrepareStep(StepAction step_action,
         Handle<JSFunction> js_function(JSFunction::cast(fun));
         if (js_function->shared()->bound()) {
           Debug::FloodBoundFunctionWithOneShot(js_function);
-        } else if (!js_function->IsFromNativeScript()) {
+        } else if (!js_function->IsNative()) {
           // Don't step into builtins.
           // It will also compile target function if it's not compiled yet.
           FloodWithOneShot(js_function);
@@ -1677,7 +1676,7 @@ void Debug::HandleStepIn(Handle<JSFunction> function,
     if (function->shared()->bound()) {
       // Handle Function.prototype.bind
       Debug::FloodBoundFunctionWithOneShot(function);
-    } else if (!function->IsFromNativeScript()) {
+    } else if (!function->IsNative()) {
       // Don't allow step into functions in the native context.
       if (function->shared()->code() ==
           isolate->builtins()->builtin(Builtins::kFunctionApply) ||
@@ -1689,7 +1688,7 @@ void Debug::HandleStepIn(Handle<JSFunction> function,
         // function.
         if (!holder.is_null() && holder->IsJSFunction()) {
           Handle<JSFunction> js_function = Handle<JSFunction>::cast(holder);
-          if (!js_function->IsFromNativeScript()) {
+          if (!js_function->IsNative()) {
             Debug::FloodWithOneShot(js_function);
           } else if (js_function->shared()->bound()) {
             // Handle Function.prototype.bind
@@ -2031,7 +2030,7 @@ void Debug::PrepareForBreakPoints() {
 
           if (!shared->allows_lazy_compilation()) continue;
           if (!shared->script()->IsScript()) continue;
-          if (function->IsFromNativeScript()) continue;
+          if (function->IsNative()) continue;
           if (shared->code()->gc_metadata() == active_code_marker) continue;
 
           if (shared->is_generator()) {
