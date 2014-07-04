@@ -4571,6 +4571,11 @@ inline bool Code::is_crankshafted() {
 }
 
 
+inline bool Code::is_hydrogen_stub() {
+  return is_crankshafted() && kind() != OPTIMIZED_FUNCTION;
+}
+
+
 inline void Code::set_is_crankshafted(bool value) {
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags2Offset);
   int updated = IsCrankshaftedField::update(previous, value);
@@ -5263,6 +5268,8 @@ ACCESSORS_TO_SMI(Script, eval_from_instructions_offset,
                  kEvalFrominstructionsOffsetOffset)
 ACCESSORS_TO_SMI(Script, flags, kFlagsOffset)
 BOOL_ACCESSORS(Script, flags, is_shared_cross_origin, kIsSharedCrossOriginBit)
+ACCESSORS(Script, source_url, Object, kSourceUrlOffset)
+ACCESSORS(Script, source_mapping_url, Object, kSourceMappingUrlOffset)
 
 Script::CompilationType Script::compilation_type() {
   return BooleanBit::get(flags(), kCompilationTypeBit) ?
@@ -5655,12 +5662,19 @@ bool JSFunction::IsBuiltin() {
 }
 
 
-bool JSFunction::IsNative() {
+bool JSFunction::IsFromNativeScript() {
   Object* script = shared()->script();
   bool native = script->IsScript() &&
                 Script::cast(script)->type()->value() == Script::TYPE_NATIVE;
   ASSERT(!IsBuiltin() || native);  // All builtins are also native.
   return native;
+}
+
+
+bool JSFunction::IsFromExtensionScript() {
+  Object* script = shared()->script();
+  return script->IsScript() &&
+         Script::cast(script)->type()->value() == Script::TYPE_EXTENSION;
 }
 
 
