@@ -2,10 +2,9 @@
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE := v8_tools_gyp_mksnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
-LOCAL_MODULE_STEM := mksnapshot
-LOCAL_MODULE_SUFFIX := 
+LOCAL_MODULE_CLASS := STATIC_LIBRARIES
+LOCAL_MODULE := v8_tools_gyp_v8_libplatform_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
+LOCAL_MODULE_SUFFIX := .a
 LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
 LOCAL_MULTILIB := $(GYP_HOST_MULTILIB)
@@ -13,16 +12,7 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_HOST_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_base_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/v8_tools_gyp_v8_base_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_nosnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/v8_tools_gyp_v8_nosnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_libplatform_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/v8_tools_gyp_v8_libplatform_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,v8_tools_gyp_v8_libbase_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/v8_tools_gyp_v8_libbase_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_icu_icui18n_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/third_party_icu_icui18n_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_icu_icuuc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/third_party_icu_icuuc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_icu_icudata_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/third_party_icu_icudata_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_js2c_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/js2c.stamp \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_generate_trig_table_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/generate_trig_table.stamp
+GYP_TARGET_DEPENDENCIES :=
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -35,14 +25,15 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	v8/src/mksnapshot.cc
+	v8/src/libplatform/default-platform.cc \
+	v8/src/libplatform/task-queue.cc \
+	v8/src/libplatform/worker-thread.cc
 
 
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
-	 \
 	-pthread \
 	-fno-exceptions \
 	-fno-strict-aliasing \
@@ -51,9 +42,8 @@ MY_CFLAGS_Debug := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unused-local-typedefs \
 	-Wno-format \
-	-m32 \
+	-m64 \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
@@ -86,10 +76,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
-	'-DV8_TARGET_ARCH_MIPS' \
-	'-DCAN_USE_FPU_INSTRUCTIONS' \
-	'-D__mips_hard_float=1' \
-	'-D_MIPS_ARCH_MIPS32R2' \
+	'-DV8_TARGET_ARCH_ARM64' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -122,7 +109,6 @@ LOCAL_CPPFLAGS_Debug := \
 MY_CFLAGS_Release := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
-	 \
 	-pthread \
 	-fno-exceptions \
 	-fno-strict-aliasing \
@@ -131,9 +117,8 @@ MY_CFLAGS_Release := \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unused-local-typedefs \
 	-Wno-format \
-	-m32 \
+	-m64 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -168,10 +153,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
-	'-DV8_TARGET_ARCH_MIPS' \
-	'-DCAN_USE_FPU_INSTRUCTIONS' \
-	'-D__mips_hard_float=1' \
-	'-D_MIPS_ARCH_MIPS32R2' \
+	'-DV8_TARGET_ARCH_ARM64' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -204,31 +186,20 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
 	-pthread \
 	-fPIC \
-	-m32
+	-m64
 
 
 LOCAL_LDFLAGS_Release := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
 	-pthread \
 	-fPIC \
-	-m32
+	-m64
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
-LOCAL_STATIC_LIBRARIES := \
-	v8_tools_gyp_v8_base_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp \
-	v8_tools_gyp_v8_nosnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp \
-	v8_tools_gyp_v8_libplatform_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp \
-	v8_tools_gyp_v8_libbase_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp \
-	third_party_icu_icui18n_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp \
-	third_party_icu_icuuc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp \
-	third_party_icu_icudata_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
+LOCAL_STATIC_LIBRARIES :=
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true
@@ -237,11 +208,10 @@ LOCAL_SHARED_LIBRARIES :=
 
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
-gyp_all_modules: v8_tools_gyp_mksnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
+gyp_all_modules: v8_tools_gyp_v8_libplatform_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
 # Alias gyp target name.
-.PHONY: mksnapshot
-mksnapshot: v8_tools_gyp_mksnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
+.PHONY: v8_libplatform
+v8_libplatform: v8_tools_gyp_v8_libplatform_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 
-LOCAL_MODULE_PATH := $(gyp_shared_intermediate_dir)
-include $(BUILD_HOST_EXECUTABLE)
+include $(BUILD_HOST_STATIC_LIBRARY)
