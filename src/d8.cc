@@ -35,6 +35,7 @@
 
 #include "src/d8.h"
 
+#include "include/libplatform/libplatform.h"
 #ifndef V8_SHARED
 #include "src/api.h"
 #include "src/base/cpu.h"
@@ -676,7 +677,7 @@ Counter* CounterCollection::GetNextCounter() {
 }
 
 
-void Shell::MapCounters(const char* name) {
+void Shell::MapCounters(v8::Isolate* isolate, const char* name) {
   counters_file_ = base::OS::MemoryMappedFile::create(
       name, sizeof(CounterCollection), &local_counters_);
   void* memory = (counters_file_ == NULL) ?
@@ -686,9 +687,9 @@ void Shell::MapCounters(const char* name) {
     Exit(1);
   }
   counters_ = static_cast<CounterCollection*>(memory);
-  V8::SetCounterFunction(LookupCounter);
-  V8::SetCreateHistogramFunction(CreateHistogram);
-  V8::SetAddHistogramSampleFunction(AddHistogramSample);
+  isolate->SetCounterFunction(LookupCounter);
+  isolate->SetCreateHistogramFunction(CreateHistogram);
+  isolate->SetAddHistogramSampleFunction(AddHistogramSample);
 }
 
 
@@ -896,7 +897,7 @@ void Shell::Initialize(Isolate* isolate) {
   Shell::counter_map_ = new CounterMap();
   // Set up counters
   if (i::StrLength(i::FLAG_map_counters) != 0)
-    MapCounters(i::FLAG_map_counters);
+    MapCounters(isolate, i::FLAG_map_counters);
   if (i::FLAG_dump_counters || i::FLAG_track_gc_object_stats) {
     V8::SetCounterFunction(LookupCounter);
     V8::SetCreateHistogramFunction(CreateHistogram);
@@ -1549,6 +1550,8 @@ class StartupDataHandler {
 int Shell::Main(int argc, char* argv[]) {
   if (!SetOptions(argc, argv)) return 1;
   v8::V8::InitializeICU(options.icu_data_file);
+  v8::Platform* platform = v8::platform::CreateDefaultPlatform();
+  v8::V8::InitializePlatform(platform);
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
   StartupDataHandler startup_data(options.natives_blob, options.snapshot_blob);
 #endif
@@ -1626,6 +1629,8 @@ int Shell::Main(int argc, char* argv[]) {
   }
   isolate->Dispose();
   V8::Dispose();
+  V8::ShutdownPlatform();
+  delete platform;
 
   OnExit();
 
