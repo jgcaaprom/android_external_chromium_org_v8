@@ -85,6 +85,7 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
+	-m64 \
 	-Os \
 	-g \
 	-fdata-sections \
@@ -193,6 +194,7 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
+	-m64 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -284,6 +286,7 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-m64 \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
@@ -300,6 +303,7 @@ LOCAL_LDFLAGS_Release := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-m64 \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \
