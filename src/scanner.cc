@@ -6,17 +6,27 @@
 
 #include <cmath>
 
-#include "src/scanner.h"
+#include "src/v8.h"
 
 #include "include/v8stdint.h"
+#include "src/ast-value-factory.h"
 #include "src/char-predicates-inl.h"
 #include "src/conversions-inl.h"
 #include "src/list-inl.h"
-#include "src/v8.h"
 #include "src/parser.h"
+#include "src/scanner.h"
 
 namespace v8 {
 namespace internal {
+
+
+Handle<String> LiteralBuffer::Internalize(Isolate* isolate) const {
+  if (is_one_byte()) {
+    return isolate->factory()->InternalizeOneByteString(one_byte_literal());
+  }
+  return isolate->factory()->InternalizeTwoByteString(two_byte_literal());
+}
+
 
 // ----------------------------------------------------------------------------
 // Scanner
@@ -294,6 +304,68 @@ Token::Value Scanner::SkipSingleLineComment() {
 }
 
 
+Token::Value Scanner::SkipSourceURLComment() {
+  TryToParseSourceURLComment();
+  while (c0_ >= 0 && !unicode_cache_->IsLineTerminator(c0_)) {
+    Advance();
+  }
+
+  return Token::WHITESPACE;
+}
+
+
+void Scanner::TryToParseSourceURLComment() {
+  // Magic comments are of the form: //[#@]\s<name>=\s*<value>\s*.* and this
+  // function will just return if it cannot parse a magic comment.
+  if (!unicode_cache_->IsWhiteSpace(c0_))
+    return;
+  Advance();
+  LiteralBuffer name;
+  while (c0_ >= 0 && !unicode_cache_->IsWhiteSpaceOrLineTerminator(c0_) &&
+         c0_ != '=') {
+    name.AddChar(c0_);
+    Advance();
+  }
+  if (!name.is_one_byte()) return;
+  Vector<const uint8_t> name_literal = name.one_byte_literal();
+  LiteralBuffer* value;
+  if (name_literal == STATIC_ASCII_VECTOR("sourceURL")) {
+    value = &source_url_;
+  } else if (name_literal == STATIC_ASCII_VECTOR("sourceMappingURL")) {
+    value = &source_mapping_url_;
+  } else {
+    return;
+  }
+  if (c0_ != '=')
+    return;
+  Advance();
+  value->Reset();
+  while (c0_ >= 0 && unicode_cache_->IsWhiteSpace(c0_)) {
+    Advance();
+  }
+  while (c0_ >= 0 && !unicode_cache_->IsLineTerminator(c0_)) {
+    // Disallowed characters.
+    if (c0_ == '"' || c0_ == '\'') {
+      value->Reset();
+      return;
+    }
+    if (unicode_cache_->IsWhiteSpace(c0_)) {
+      break;
+    }
+    value->AddChar(c0_);
+    Advance();
+  }
+  // Allow whitespace at the end.
+  while (c0_ >= 0 && !unicode_cache_->IsLineTerminator(c0_)) {
+    if (!unicode_cache_->IsWhiteSpace(c0_)) {
+      value->Reset();
+      break;
+    }
+    Advance();
+  }
+}
+
+
 Token::Value Scanner::SkipMultiLineComment() {
   ASSERT(c0_ == '*');
   Advance();
@@ -394,10 +466,12 @@ void Scanner::Scan() {
         break;
 
       case '=':
-        // = == ===
+        // = == === =>
         Advance();
         if (c0_ == '=') {
           token = Select('=', Token::EQ_STRICT, Token::EQ);
+        } else if (c0_ == '>') {
+          token = Select(Token::ARROW);
         } else {
           token = Token::ASSIGN;
         }
@@ -458,7 +532,14 @@ void Scanner::Scan() {
         // /  // /* /=
         Advance();
         if (c0_ == '/') {
-          token = SkipSingleLineComment();
+          Advance();
+          if (c0_ == '@' || c0_ == '#') {
+            Advance();
+            token = SkipSourceURLComment();
+          } else {
+            PushBack(c0_);
+            token = SkipSingleLineComment();
+          }
         } else if (c0_ == '*') {
           token = SkipMultiLineComment();
         } else if (c0_ == '=') {
@@ -927,6 +1008,16 @@ static Token::Value KeywordOrIdentifierToken(const uint8_t* input,
 }
 
 
+bool Scanner::IdentifierIsFutureStrictReserved(
+    const AstRawString* string) const {
+  // Keywords are always 1-byte strings.
+  return string->is_one_byte() &&
+         Token::FUTURE_STRICT_RESERVED_WORD ==
+             KeywordOrIdentifierToken(string->raw_data(), string->length(),
+                                      harmony_scoping_, harmony_modules_);
+}
+
+
 Token::Value Scanner::ScanIdentifierOrKeyword() {
   ASSERT(unicode_cache_->IsIdentifierStart(c0_));
   LiteralScope literal(this);
@@ -1093,26 +1184,19 @@ bool Scanner::ScanRegExpFlags() {
 }
 
 
-Handle<String> Scanner::AllocateNextLiteralString(Isolate* isolate,
-                                                  PretenureFlag tenured) {
-  if (is_next_literal_one_byte()) {
-    return isolate->factory()->NewStringFromOneByte(
-        next_literal_one_byte_string(), tenured).ToHandleChecked();
-  } else {
-    return isolate->factory()->NewStringFromTwoByte(
-        next_literal_two_byte_string(), tenured).ToHandleChecked();
+const AstRawString* Scanner::CurrentSymbol(AstValueFactory* ast_value_factory) {
+  if (is_literal_one_byte()) {
+    return ast_value_factory->GetOneByteString(literal_one_byte_string());
   }
+  return ast_value_factory->GetTwoByteString(literal_two_byte_string());
 }
 
 
-Handle<String> Scanner::AllocateInternalizedString(Isolate* isolate) {
-  if (is_literal_one_byte()) {
-    return isolate->factory()->InternalizeOneByteString(
-        literal_one_byte_string());
-  } else {
-    return isolate->factory()->InternalizeTwoByteString(
-        literal_two_byte_string());
+const AstRawString* Scanner::NextSymbol(AstValueFactory* ast_value_factory) {
+  if (is_next_literal_one_byte()) {
+    return ast_value_factory->GetOneByteString(next_literal_one_byte_string());
   }
+  return ast_value_factory->GetTwoByteString(next_literal_two_byte_string());
 }
 
 

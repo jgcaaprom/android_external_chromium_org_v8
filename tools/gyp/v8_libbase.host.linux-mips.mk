@@ -26,7 +26,16 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	v8/src/base/atomicops_internals_x86_gcc.cc \
-	v8/src/base/once.cc
+	v8/src/base/cpu.cc \
+	v8/src/base/logging.cc \
+	v8/src/base/once.cc \
+	v8/src/base/platform/time.cc \
+	v8/src/base/platform/condition-variable.cc \
+	v8/src/base/platform/mutex.cc \
+	v8/src/base/platform/semaphore.cc \
+	v8/src/base/utils/random-number-generator.cc \
+	v8/src/base/platform/platform-posix.cc \
+	v8/src/base/platform/platform-linux.cc
 
 
 # Flags passed to both C and C++ files.
@@ -47,9 +56,9 @@ MY_CFLAGS_Debug := \
 	-m32 \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -68,6 +77,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -83,6 +93,7 @@ MY_DEFS_Debug := \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
+	'-DV8_LIBRT_NOT_AVAILABLE=1' \
 	'-DDYNAMIC_ANNOTATIONS_ENABLED=1' \
 	'-DWTF_USE_DYNAMIC_ANNOTATIONS=1' \
 	'-D_DEBUG' \
@@ -149,6 +160,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -164,6 +176,7 @@ MY_DEFS_Release := \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
+	'-DV8_LIBRT_NOT_AVAILABLE=1' \
 	'-DNDEBUG' \
 	'-DNVALGRIND' \
 	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \

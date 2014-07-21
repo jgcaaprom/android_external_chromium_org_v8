@@ -11,8 +11,8 @@
 #include "src/conversions.h"
 #include "src/hashmap.h"
 #include "src/parser.h"
-#include "src/property-details.h"
 #include "src/property.h"
+#include "src/property-details.h"
 #include "src/scopes.h"
 #include "src/string-stream.h"
 #include "src/type-info.h"
@@ -55,25 +55,23 @@ bool Expression::IsUndefinedLiteral(Isolate* isolate) const {
   // The global identifier "undefined" is immutable. Everything
   // else could be reassigned.
   return var != NULL && var->location() == Variable::UNALLOCATED &&
-         String::Equals(var_proxy->name(),
-                        isolate->factory()->undefined_string());
+         var_proxy->raw_name()->IsOneByteEqualTo("undefined");
 }
 
 
 VariableProxy::VariableProxy(Zone* zone, Variable* var, int position)
     : Expression(zone, position),
-      name_(var->name()),
+      name_(var->raw_name()),
       var_(NULL),  // Will be set by the call to BindTo.
       is_this_(var->is_this()),
-      is_trivial_(false),
-      is_lvalue_(false),
+      is_assigned_(false),
       interface_(var->interface()) {
   BindTo(var);
 }
 
 
 VariableProxy::VariableProxy(Zone* zone,
-                             Handle<String> name,
+                             const AstRawString* name,
                              bool is_this,
                              Interface* interface,
                              int position)
@@ -81,11 +79,8 @@ VariableProxy::VariableProxy(Zone* zone,
       name_(name),
       var_(NULL),
       is_this_(is_this),
-      is_trivial_(false),
-      is_lvalue_(false),
+      is_assigned_(false),
       interface_(interface) {
-  // Names must be canonicalized for fast equality checks.
-  ASSERT(name->IsInternalizedString());
 }
 
 
@@ -93,14 +88,14 @@ void VariableProxy::BindTo(Variable* var) {
   ASSERT(var_ == NULL);  // must be bound only once
   ASSERT(var != NULL);  // must bind
   ASSERT(!FLAG_harmony_modules || interface_->IsUnified(var->interface()));
-  ASSERT((is_this() && var->is_this()) || name_.is_identical_to(var->name()));
+  ASSERT((is_this() && var->is_this()) || name_ == var->raw_name());
   // Ideally CONST-ness should match. However, this is very hard to achieve
   // because we don't know the exact semantics of conflicting (const and
   // non-const) multiple variable declarations, const vars introduced via
   // eval() etc.  Const-ness and variable declarations are a complete mess
   // in JS. Sigh...
   var_ = var;
-  var->set_is_used(true);
+  var->set_is_used();
 }
 
 
@@ -180,15 +175,13 @@ void FunctionLiteral::InitializeSharedInfo(
 }
 
 
-ObjectLiteralProperty::ObjectLiteralProperty(
-    Zone* zone, Literal* key, Expression* value) {
+ObjectLiteralProperty::ObjectLiteralProperty(Zone* zone,
+                                             AstValueFactory* ast_value_factory,
+                                             Literal* key, Expression* value) {
   emit_store_ = true;
   key_ = key;
   value_ = value;
-  Handle<Object> k = key->value();
-  if (k->IsInternalizedString() &&
-      String::Equals(Handle<String>::cast(k),
-                     zone->isolate()->factory()->proto_string())) {
+  if (key->raw_value()->EqualsString(ast_value_factory->proto_string())) {
     kind_ = PROTOTYPE;
   } else if (value_->AsMaterializedLiteral() != NULL) {
     kind_ = MATERIALIZED_LITERAL;
@@ -806,51 +799,44 @@ bool RegExpCapture::IsAnchoredAtEnd() {
 // output formats are alike.
 class RegExpUnparser V8_FINAL : public RegExpVisitor {
  public:
-  explicit RegExpUnparser(Zone* zone);
+  RegExpUnparser(OStream& os, Zone* zone) : os_(os), zone_(zone) {}
   void VisitCharacterRange(CharacterRange that);
-  SmartArrayPointer<const char> ToString() { return stream_.ToCString(); }
 #define MAKE_CASE(Name) virtual void* Visit##Name(RegExp##Name*,          \
                                                   void* data) V8_OVERRIDE;
   FOR_EACH_REG_EXP_TREE_TYPE(MAKE_CASE)
 #undef MAKE_CASE
  private:
-  StringStream* stream() { return &stream_; }
-  HeapStringAllocator alloc_;
-  StringStream stream_;
+  OStream& os_;
   Zone* zone_;
 };
 
 
-RegExpUnparser::RegExpUnparser(Zone* zone) : stream_(&alloc_), zone_(zone) {
-}
-
-
 void* RegExpUnparser::VisitDisjunction(RegExpDisjunction* that, void* data) {
-  stream()->Add("(|");
+  os_ << "(|";
   for (int i = 0; i <  that->alternatives()->length(); i++) {
-    stream()->Add(" ");
+    os_ << " ";
     that->alternatives()->at(i)->Accept(this, data);
   }
-  stream()->Add(")");
+  os_ << ")";
   return NULL;
 }
 
 
 void* RegExpUnparser::VisitAlternative(RegExpAlternative* that, void* data) {
-  stream()->Add("(:");
+  os_ << "(:";
   for (int i = 0; i <  that->nodes()->length(); i++) {
-    stream()->Add(" ");
+    os_ << " ";
     that->nodes()->at(i)->Accept(this, data);
   }
-  stream()->Add(")");
+  os_ << ")";
   return NULL;
 }
 
 
 void RegExpUnparser::VisitCharacterRange(CharacterRange that) {
-  stream()->Add("%k", that.from());
+  os_ << AsUC16(that.from());
   if (!that.IsSingleton()) {
-    stream()->Add("-%k", that.to());
+    os_ << "-" << AsUC16(that.to());
   }
 }
 
@@ -858,14 +844,13 @@ void RegExpUnparser::VisitCharacterRange(CharacterRange that) {
 
 void* RegExpUnparser::VisitCharacterClass(RegExpCharacterClass* that,
                                           void* data) {
-  if (that->is_negated())
-    stream()->Add("^");
-  stream()->Add("[");
+  if (that->is_negated()) os_ << "^";
+  os_ << "[";
   for (int i = 0; i < that->ranges(zone_)->length(); i++) {
-    if (i > 0) stream()->Add(" ");
+    if (i > 0) os_ << " ";
     VisitCharacterRange(that->ranges(zone_)->at(i));
   }
-  stream()->Add("]");
+  os_ << "]";
   return NULL;
 }
 
@@ -873,22 +858,22 @@ void* RegExpUnparser::VisitCharacterClass(RegExpCharacterClass* that,
 void* RegExpUnparser::VisitAssertion(RegExpAssertion* that, void* data) {
   switch (that->assertion_type()) {
     case RegExpAssertion::START_OF_INPUT:
-      stream()->Add("@^i");
+      os_ << "@^i";
       break;
     case RegExpAssertion::END_OF_INPUT:
-      stream()->Add("@$i");
+      os_ << "@$i";
       break;
     case RegExpAssertion::START_OF_LINE:
-      stream()->Add("@^l");
+      os_ << "@^l";
       break;
     case RegExpAssertion::END_OF_LINE:
-      stream()->Add("@$l");
+      os_ << "@$l";
        break;
     case RegExpAssertion::BOUNDARY:
-      stream()->Add("@b");
+      os_ << "@b";
       break;
     case RegExpAssertion::NON_BOUNDARY:
-      stream()->Add("@B");
+      os_ << "@B";
       break;
   }
   return NULL;
@@ -896,12 +881,12 @@ void* RegExpUnparser::VisitAssertion(RegExpAssertion* that, void* data) {
 
 
 void* RegExpUnparser::VisitAtom(RegExpAtom* that, void* data) {
-  stream()->Add("'");
+  os_ << "'";
   Vector<const uc16> chardata = that->data();
   for (int i = 0; i < chardata.length(); i++) {
-    stream()->Add("%k", chardata[i]);
+    os_ << AsUC16(chardata[i]);
   }
-  stream()->Add("'");
+  os_ << "'";
   return NULL;
 }
 
@@ -910,65 +895,64 @@ void* RegExpUnparser::VisitText(RegExpText* that, void* data) {
   if (that->elements()->length() == 1) {
     that->elements()->at(0).tree()->Accept(this, data);
   } else {
-    stream()->Add("(!");
+    os_ << "(!";
     for (int i = 0; i < that->elements()->length(); i++) {
-      stream()->Add(" ");
+      os_ << " ";
       that->elements()->at(i).tree()->Accept(this, data);
     }
-    stream()->Add(")");
+    os_ << ")";
   }
   return NULL;
 }
 
 
 void* RegExpUnparser::VisitQuantifier(RegExpQuantifier* that, void* data) {
-  stream()->Add("(# %i ", that->min());
+  os_ << "(# " << that->min() << " ";
   if (that->max() == RegExpTree::kInfinity) {
-    stream()->Add("- ");
+    os_ << "- ";
   } else {
-    stream()->Add("%i ", that->max());
+    os_ << that->max() << " ";
   }
-  stream()->Add(that->is_greedy() ? "g " : that->is_possessive() ? "p " : "n ");
+  os_ << (that->is_greedy() ? "g " : that->is_possessive() ? "p " : "n ");
   that->body()->Accept(this, data);
-  stream()->Add(")");
+  os_ << ")";
   return NULL;
 }
 
 
 void* RegExpUnparser::VisitCapture(RegExpCapture* that, void* data) {
-  stream()->Add("(^ ");
+  os_ << "(^ ";
   that->body()->Accept(this, data);
-  stream()->Add(")");
+  os_ << ")";
   return NULL;
 }
 
 
 void* RegExpUnparser::VisitLookahead(RegExpLookahead* that, void* data) {
-  stream()->Add("(-> ");
-  stream()->Add(that->is_positive() ? "+ " : "- ");
+  os_ << "(-> " << (that->is_positive() ? "+ " : "- ");
   that->body()->Accept(this, data);
-  stream()->Add(")");
+  os_ << ")";
   return NULL;
 }
 
 
 void* RegExpUnparser::VisitBackReference(RegExpBackReference* that,
                                          void* data) {
-  stream()->Add("(<- %i)", that->index());
+  os_ << "(<- " << that->index() << ")";
   return NULL;
 }
 
 
 void* RegExpUnparser::VisitEmpty(RegExpEmpty* that, void* data) {
-  stream()->Put('%');
+  os_ << '%';
   return NULL;
 }
 
 
-SmartArrayPointer<const char> RegExpTree::ToString(Zone* zone) {
-  RegExpUnparser unparser(zone);
+OStream& RegExpTree::Print(OStream& os, Zone* zone) {  // NOLINT
+  RegExpUnparser unparser(os, zone);
   Accept(&unparser, NULL);
-  return unparser.ToString();
+  return os;
 }
 
 
@@ -1035,7 +1019,6 @@ CaseClause::CaseClause(Zone* zone,
   void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
     increase_node_count(); \
     set_dont_optimize_reason(k##NodeType); \
-    add_flag(kDontInline); \
     add_flag(kDontSelfOptimize); \
   }
 #define DONT_SELFOPTIMIZE_NODE(NodeType) \
@@ -1053,7 +1036,6 @@ CaseClause::CaseClause(Zone* zone,
   void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
     increase_node_count(); \
     set_dont_optimize_reason(k##NodeType); \
-    add_flag(kDontInline); \
     add_flag(kDontSelfOptimize); \
     add_flag(kDontCache); \
   }
@@ -1086,7 +1068,8 @@ REGULAR_NODE(ThisFunction)
 REGULAR_NODE_WITH_FEEDBACK_SLOTS(Call)
 REGULAR_NODE_WITH_FEEDBACK_SLOTS(CallNew)
 // In theory, for VariableProxy we'd have to add:
-// if (node->var()->IsLookupSlot()) add_flag(kDontInline);
+// if (node->var()->IsLookupSlot())
+//   set_dont_optimize_reason(kReferenceToAVariableWhichRequiresDynamicLookup);
 // But node->var() is usually not bound yet at VariableProxy creation time, and
 // LOOKUP variables only result from constructs that cannot be inlined anyway.
 REGULAR_NODE(VariableProxy)
@@ -1118,17 +1101,8 @@ DONT_CACHE_NODE(ModuleLiteral)
 void AstConstructionVisitor::VisitCallRuntime(CallRuntime* node) {
   increase_node_count();
   if (node->is_jsruntime()) {
-    // Don't try to inline JS runtime calls because we don't (currently) even
-    // optimize them.
-    add_flag(kDontInline);
-  } else if (node->function()->intrinsic_type == Runtime::INLINE &&
-      (node->name()->IsOneByteEqualTo(
-          STATIC_ASCII_VECTOR("_ArgumentsLength")) ||
-       node->name()->IsOneByteEqualTo(STATIC_ASCII_VECTOR("_Arguments")))) {
-    // Don't inline the %_ArgumentsLength or %_Arguments because their
-    // implementation will not work.  There is no stack frame to get them
-    // from.
-    add_flag(kDontInline);
+    // Don't try to optimize JS runtime calls because we bailout on them.
+    set_dont_optimize_reason(kCallToAJavaScriptRuntimeFunction);
   }
 }
 
@@ -1139,17 +1113,17 @@ void AstConstructionVisitor::VisitCallRuntime(CallRuntime* node) {
 
 
 Handle<String> Literal::ToString() {
-  if (value_->IsString()) return Handle<String>::cast(value_);
+  if (value_->IsString()) return value_->AsString()->string();
   ASSERT(value_->IsNumber());
   char arr[100];
   Vector<char> buffer(arr, ARRAY_SIZE(arr));
   const char* str;
-  if (value_->IsSmi()) {
+  if (value()->IsSmi()) {
     // Optimization only, the heap number case would subsume this.
-    SNPrintF(buffer, "%d", Smi::cast(*value_)->value());
+    SNPrintF(buffer, "%d", Smi::cast(*value())->value());
     str = arr;
   } else {
-    str = DoubleToCString(value_->Number(), buffer);
+    str = DoubleToCString(value()->Number(), buffer);
   }
   return isolate_->factory()->NewStringFromAsciiChecked(str);
 }

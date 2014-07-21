@@ -6,13 +6,14 @@
 
 #if V8_TARGET_ARCH_ARM64
 
-#include "src/cpu-profiler.h"
-#include "src/unicode.h"
-#include "src/log.h"
 #include "src/code-stubs.h"
-#include "src/regexp-stack.h"
+#include "src/cpu-profiler.h"
+#include "src/log.h"
 #include "src/macro-assembler.h"
 #include "src/regexp-macro-assembler.h"
+#include "src/regexp-stack.h"
+#include "src/unicode.h"
+
 #include "src/arm64/regexp-macro-assembler-arm64.h"
 
 namespace v8 {
@@ -396,11 +397,14 @@ void RegExpMacroAssemblerARM64::CheckNotBackReferenceIgnoreCase(
     }
 
     // Check if function returned non-zero for success or zero for failure.
-    CompareAndBranchOrBacktrack(x0, 0, eq, on_no_match);
+    // x0 is one of the registers used as a cache so it must be tested before
+    // the cache is restored.
+    __ Cmp(x0, 0);
+    __ PopCPURegList(cached_registers);
+    BranchOrBacktrack(eq, on_no_match);
+
     // On success, increment position by length of capture.
     __ Add(current_input_offset(), current_input_offset(), capture_length);
-    // Reset the cached registers.
-    __ PopCPURegList(cached_registers);
   }
 
   __ Bind(&fallthrough);
@@ -1460,12 +1464,7 @@ void RegExpMacroAssemblerARM64::BranchOrBacktrack(Condition condition,
   if (to == NULL) {
     to = &backtrack_label_;
   }
-  // TODO(ulan): do direct jump when jump distance is known and fits in imm19.
-  Condition inverted_condition = NegateCondition(condition);
-  Label no_branch;
-  __ B(inverted_condition, &no_branch);
-  __ B(to);
-  __ Bind(&no_branch);
+  __ B(condition, to);
 }
 
 void RegExpMacroAssemblerARM64::CompareAndBranchOrBacktrack(Register reg,
@@ -1476,15 +1475,11 @@ void RegExpMacroAssemblerARM64::CompareAndBranchOrBacktrack(Register reg,
     if (to == NULL) {
       to = &backtrack_label_;
     }
-    // TODO(ulan): do direct jump when jump distance is known and fits in imm19.
-    Label no_branch;
     if (condition == eq) {
-      __ Cbnz(reg, &no_branch);
+      __ Cbz(reg, to);
     } else {
-      __ Cbz(reg, &no_branch);
+      __ Cbnz(reg, to);
     }
-    __ B(to);
-    __ Bind(&no_branch);
   } else {
     __ Cmp(reg, immediate);
     BranchOrBacktrack(condition, to);

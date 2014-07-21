@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-promises --expose-debug-as debug
+// Flags: --expose-debug-as debug
 
 // Test debug events when we listen to all exceptions and
 // there is a catch handler for the exception thrown in a Promise.
@@ -26,6 +26,7 @@ var q = p.chain(
   });
 
 function listener(event, exec_state, event_data, data) {
+  if (event == Debug.DebugEvent.AsyncTaskEvent) return;
   try {
     // Ignore exceptions during startup in stress runs.
     if (step >= 1) return;

@@ -3,23 +3,25 @@
 // found in the LICENSE file.
 
 #include "src/v8.h"
-#include "src/lithium-allocator-inl.h"
 
 #include "src/hydrogen.h"
+#include "src/lithium-allocator-inl.h"
 #include "src/string-stream.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "src/ia32/lithium-ia32.h"
+#include "src/ia32/lithium-ia32.h"  // NOLINT
 #elif V8_TARGET_ARCH_X64
-#include "src/x64/lithium-x64.h"
+#include "src/x64/lithium-x64.h"  // NOLINT
 #elif V8_TARGET_ARCH_ARM64
-#include "src/arm64/lithium-arm64.h"
+#include "src/arm64/lithium-arm64.h"  // NOLINT
 #elif V8_TARGET_ARCH_ARM
-#include "src/arm/lithium-arm.h"
+#include "src/arm/lithium-arm.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
-#include "src/mips/lithium-mips.h"
+#include "src/mips/lithium-mips.h"  // NOLINT
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/mips64/lithium-mips64.h"  // NOLINT
 #elif V8_TARGET_ARCH_X87
-#include "src/x87/lithium-x87.h"
+#include "src/x87/lithium-x87.h"  // NOLINT
 #else
 #error "Unknown architecture."
 #endif
@@ -1618,7 +1620,7 @@ void LAllocator::TraceAlloc(const char* msg, ...) {
   if (FLAG_trace_alloc) {
     va_list arguments;
     va_start(arguments, msg);
-    OS::VPrint(msg, arguments);
+    base::OS::VPrint(msg, arguments);
     va_end(arguments);
   }
 }
@@ -2192,7 +2194,7 @@ LAllocatorPhase::~LAllocatorPhase() {
   if (FLAG_hydrogen_stats) {
     unsigned size = allocator_->zone()->allocation_size() -
                     allocator_zone_start_allocation_size_;
-    isolate()->GetHStatistics()->SaveTiming(name(), TimeDelta(), size);
+    isolate()->GetHStatistics()->SaveTiming(name(), base::TimeDelta(), size);
   }
 
   if (ShouldProduceTraceOutput()) {

@@ -109,27 +109,27 @@ HeapObject* HeapObjectIterator::FromCurrentPage() {
 #ifdef ENABLE_HEAP_PROTECTION
 
 void MemoryAllocator::Protect(Address start, size_t size) {
-  OS::Protect(start, size);
+  base::OS::Protect(start, size);
 }
 
 
 void MemoryAllocator::Unprotect(Address start,
                                 size_t size,
                                 Executability executable) {
-  OS::Unprotect(start, size, executable);
+  base::OS::Unprotect(start, size, executable);
 }
 
 
 void MemoryAllocator::ProtectChunkFromPage(Page* page) {
   int id = GetChunkId(page);
-  OS::Protect(chunks_[id].address(), chunks_[id].size());
+  base::OS::Protect(chunks_[id].address(), chunks_[id].size());
 }
 
 
 void MemoryAllocator::UnprotectChunkFromPage(Page* page) {
   int id = GetChunkId(page);
-  OS::Unprotect(chunks_[id].address(), chunks_[id].size(),
-                chunks_[id].owner()->executable() == EXECUTABLE);
+  base::OS::Unprotect(chunks_[id].address(), chunks_[id].size(),
+                      chunks_[id].owner()->executable() == EXECUTABLE);
 }
 
 #endif
@@ -253,26 +253,14 @@ HeapObject* PagedSpace::AllocateLinearly(int size_in_bytes) {
 // Raw allocation.
 AllocationResult PagedSpace::AllocateRaw(int size_in_bytes) {
   HeapObject* object = AllocateLinearly(size_in_bytes);
-  if (object != NULL) {
-    if (identity() == CODE_SPACE) {
-      SkipList::Update(object->address(), size_in_bytes);
+
+  if (object == NULL) {
+    object = free_list_.Allocate(size_in_bytes);
+    if (object == NULL) {
+      object = SlowAllocateRaw(size_in_bytes);
     }
-    return object;
   }
 
-  ASSERT(!heap()->linear_allocation() ||
-         (anchor_.next_chunk() == &anchor_ &&
-          anchor_.prev_chunk() == &anchor_));
-
-  object = free_list_.Allocate(size_in_bytes);
-  if (object != NULL) {
-    if (identity() == CODE_SPACE) {
-      SkipList::Update(object->address(), size_in_bytes);
-    }
-    return object;
-  }
-
-  object = SlowAllocateRaw(size_in_bytes);
   if (object != NULL) {
     if (identity() == CODE_SPACE) {
       SkipList::Update(object->address(), size_in_bytes);

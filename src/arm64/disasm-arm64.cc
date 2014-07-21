@@ -3,19 +3,19 @@
 // found in the LICENSE file.
 
 #include <assert.h>
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM64
 
-#include "src/disasm.h"
 #include "src/arm64/decoder-arm64-inl.h"
 #include "src/arm64/disasm-arm64.h"
+#include "src/base/platform/platform.h"
+#include "src/disasm.h"
 #include "src/macro-assembler.h"
-#include "src/platform.h"
 
 namespace v8 {
 namespace internal {

@@ -51,13 +51,7 @@
               # Anything else gets passed through, which probably won't work
               # very well; such hosts should pass an explicit target_arch
               # to gyp.
-              'host_arch%':
-                '<!(uname -m | sed -e "s/i.86/ia32/;\
-                                       s/x86_64/x64/;\
-                                       s/amd64/x64/;\
-                                       s/arm.*/arm/;\
-                                       s/aarch64/arm64/;\
-                                       s/mips.*/mipsel/")',
+              'host_arch%': '<!pymod_do_main(detect_v8_host_arch)',
             }, {
               # OS!="linux" and OS!="freebsd" and OS!="openbsd" and
               # OS!="netbsd" and OS!="mac"
@@ -104,6 +98,7 @@
       ['(v8_target_arch=="arm" and host_arch!="arm") or \
         (v8_target_arch=="arm64" and host_arch!="arm64") or \
         (v8_target_arch=="mipsel" and host_arch!="mipsel") or \
+        (v8_target_arch=="mips64el" and host_arch!="mips64el") or \
         (v8_target_arch=="x64" and host_arch!="x64") or \
         (OS=="android" or OS=="qnx")', {
         'want_separate_host_toolset': 1,
@@ -195,7 +190,8 @@
        or OS=="netbsd"', {
       'target_defaults': {
         'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                    '-pthread', '-fno-exceptions', '-pedantic' ],
+                    '-Wno-long-long', '-pthread', '-fno-exceptions',
+                    '-pedantic' ],
         'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti' ],
         'ldflags': [ '-pthread', ],
         'conditions': [

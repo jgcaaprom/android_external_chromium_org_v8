@@ -26,10 +26,10 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/v8.h"
+#include "test/cctest/cctest.h"
+
 #include "src/accessors.h"
 #include "src/api.h"
-
-#include "test/cctest/cctest.h"
 
 
 using namespace v8::internal;
@@ -50,7 +50,6 @@ static AllocationResult AllocateAfterFailures() {
   // for specific kinds.
   heap->AllocateFixedArray(100).ToObjectChecked();
   heap->AllocateHeapNumber(0.42).ToObjectChecked();
-  heap->AllocateArgumentsObject(Smi::FromInt(87), 10).ToObjectChecked();
   Object* object = heap->AllocateJSObject(
       *CcTest::i_isolate()->object_function()).ToObjectChecked();
   heap->CopyJSObject(JSObject::cast(object)).ToObjectChecked();

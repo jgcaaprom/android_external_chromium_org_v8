@@ -42,6 +42,7 @@ namespace internal {
   V(Map, shared_function_info_map, SharedFunctionInfoMap)                      \
   V(Map, meta_map, MetaMap)                                                    \
   V(Map, heap_number_map, HeapNumberMap)                                       \
+  V(Map, mutable_heap_number_map, MutableHeapNumberMap)                        \
   V(Map, native_context_map, NativeContextMap)                                 \
   V(Map, fixed_array_map, FixedArrayMap)                                       \
   V(Map, code_map, CodeMap)                                                    \
@@ -193,6 +194,8 @@ namespace internal {
   V(Symbol, observed_symbol, ObservedSymbol)                                   \
   V(Symbol, uninitialized_symbol, UninitializedSymbol)                         \
   V(Symbol, megamorphic_symbol, MegamorphicSymbol)                             \
+  V(Symbol, stack_trace_symbol, StackTraceSymbol)                              \
+  V(Symbol, detailed_stack_trace_symbol, DetailedStackTraceSymbol)             \
   V(FixedArray, materialized_objects, MaterializedObjects)                     \
   V(FixedArray, allocation_sites_scratchpad, AllocationSitesScratchpad)        \
   V(FixedArray, microtask_queue, MicrotaskQueue)
@@ -230,6 +233,7 @@ namespace internal {
   V(shared_function_info_map)             \
   V(meta_map)                             \
   V(heap_number_map)                      \
+  V(mutable_heap_number_map)              \
   V(native_context_map)                   \
   V(fixed_array_map)                      \
   V(code_map)                             \
@@ -277,22 +281,19 @@ namespace internal {
   V(constructor_string, "constructor")                                   \
   V(dot_result_string, ".result")                                        \
   V(dot_for_string, ".for.")                                             \
-  V(dot_iterable_string, ".iterable")                                    \
-  V(dot_iterator_string, ".iterator")                                    \
-  V(dot_generator_object_string, ".generator_object")                    \
   V(eval_string, "eval")                                                 \
   V(empty_string, "")                                                    \
   V(function_string, "function")                                         \
   V(length_string, "length")                                             \
-  V(module_string, "module")                                             \
   V(name_string, "name")                                                 \
-  V(native_string, "native")                                             \
   V(null_string, "null")                                                 \
   V(number_string, "number")                                             \
   V(Number_string, "Number")                                             \
   V(nan_string, "NaN")                                                   \
   V(RegExp_string, "RegExp")                                             \
   V(source_string, "source")                                             \
+  V(source_url_string, "source_url")                                     \
+  V(source_mapping_url_string, "source_mapping_url")                     \
   V(global_string, "global")                                             \
   V(ignore_case_string, "ignoreCase")                                    \
   V(multiline_string, "multiline")                                       \
@@ -312,7 +313,6 @@ namespace internal {
   V(private_api_string, "private_api")                                   \
   V(private_intern_string, "private_intern")                             \
   V(Date_string, "Date")                                                 \
-  V(this_string, "this")                                                 \
   V(to_string_string, "toString")                                        \
   V(char_at_string, "CharAt")                                            \
   V(undefined_string, "undefined")                                       \
@@ -335,24 +335,17 @@ namespace internal {
   V(cell_value_string, "%cell_value")                                    \
   V(function_class_string, "Function")                                   \
   V(illegal_argument_string, "illegal argument")                         \
-  V(MakeReferenceError_string, "MakeReferenceError")                     \
-  V(MakeSyntaxError_string, "MakeSyntaxError")                           \
-  V(MakeTypeError_string, "MakeTypeError")                               \
-  V(unknown_label_string, "unknown_label")                               \
   V(space_string, " ")                                                   \
   V(exec_string, "exec")                                                 \
   V(zero_string, "0")                                                    \
   V(global_eval_string, "GlobalEval")                                    \
   V(identity_hash_string, "v8::IdentityHash")                            \
   V(closure_string, "(closure)")                                         \
-  V(use_strict_string, "use strict")                                     \
   V(dot_string, ".")                                                     \
-  V(anonymous_function_string, "(anonymous function)")                   \
   V(compare_ic_string, "==")                                             \
   V(strict_compare_ic_string, "===")                                     \
   V(infinity_string, "Infinity")                                         \
   V(minus_infinity_string, "-Infinity")                                  \
-  V(hidden_stack_trace_string, "v8::hidden_stack_trace")                 \
   V(query_colon_string, "(?:)")                                          \
   V(Generator_string, "Generator")                                       \
   V(throw_string, "throw")                                               \
@@ -435,6 +428,18 @@ class PromotionQueue {
     }
 
     RelocateQueueHead();
+  }
+
+  bool IsBelowPromotionQueue(Address to_space_top) {
+    // If the given to-space top pointer and the head of the promotion queue
+    // are not on the same page, then the to-space objects are below the
+    // promotion queue.
+    if (GetHeadPage() != Page::FromAddress(to_space_top)) {
+      return true;
+    }
+    // If the to space top pointer is smaller or equal than the promotion
+    // queue head, then the to-space objects are below the promotion queue.
+    return reinterpret_cast<intptr_t*>(to_space_top) <= rear_;
   }
 
   bool is_empty() {
@@ -656,9 +661,6 @@ class Heap {
   bool always_allocate() { return always_allocate_scope_depth_ != 0; }
   Address always_allocate_scope_depth_address() {
     return reinterpret_cast<Address>(&always_allocate_scope_depth_);
-  }
-  bool linear_allocation() {
-    return linear_allocation_scope_depth_ != 0;
   }
 
   Address* NewSpaceAllocationTopAddress() {
@@ -977,6 +979,13 @@ class Heap {
 #endif
   }
 
+  // Number of "runtime allocations" done so far.
+  uint32_t allocations_count() { return allocations_count_; }
+
+  // Returns deterministic "time" value in ms. Works only with
+  // FLAG_verify_predictable.
+  double synthetic_time() { return allocations_count_ / 100.0; }
+
   // Print short heap statistics.
   void PrintShortHeapStatistics();
 
@@ -1085,15 +1094,8 @@ class Heap {
   static const int kMaxExecutableSizeHugeMemoryDevice =
       700 * kPointerMultiplier;
 
-  intptr_t OldGenerationAllocationLimit(intptr_t old_gen_size) {
-    intptr_t limit = FLAG_stress_compaction
-        ? old_gen_size + old_gen_size / 10
-        : old_gen_size * old_space_growing_factor_;
-    limit = Max(limit, kMinimumOldGenerationAllocationLimit);
-    limit += new_space_.Capacity();
-    intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
-    return Min(limit, halfway_to_the_max);
-  }
+  intptr_t OldGenerationAllocationLimit(intptr_t old_gen_size,
+                                        int freed_global_handles);
 
   // Indicates whether inline bump-pointer allocation has been disabled.
   bool inline_allocation_disabled() { return inline_allocation_disabled_; }
@@ -1180,6 +1182,18 @@ class Heap {
     semi_space_copied_object_size_ += object_size;
   }
 
+  inline void IncrementNodesDiedInNewSpace() {
+    nodes_died_in_new_space_++;
+  }
+
+  inline void IncrementNodesCopiedInNewSpace() {
+    nodes_copied_in_new_space_++;
+  }
+
+  inline void IncrementNodesPromoted() {
+    nodes_promoted_++;
+  }
+
   inline void IncrementYoungSurvivorsCounter(int survived) {
     ASSERT(survived >= 0);
     survived_since_last_expansion_ += survived;
@@ -1208,10 +1222,8 @@ class Heap {
 
   void VisitExternalResources(v8::ExternalResourceVisitor* visitor);
 
-  // Helper function that governs the promotion policy from new space to
-  // old.  If the object's old address lies below the new space's age
-  // mark or if we've already filled the bottom 1/16th of the to space,
-  // we try to promote this object.
+  // An object should be promoted if the object has survived a
+  // scavenge operation.
   inline bool ShouldBePromoted(Address old_address, int object_size);
 
   void ClearJSFunctionResultCaches();
@@ -1235,6 +1247,12 @@ class Heap {
       full_codegen_bytes_generated_ += size;
     }
   }
+
+  // Update GC statistics that are tracked on the Heap.
+  void UpdateGCStatistics(double start_time,
+                          double end_time,
+                          double spent_in_mutator,
+                          double marking_time);
 
   // Returns maximum GC pause.
   double get_max_gc_pause() { return max_gc_pause_; }
@@ -1437,6 +1455,17 @@ class Heap {
   static void FatalProcessOutOfMemory(const char* location,
                                       bool take_snapshot = false);
 
+  // This event is triggered after successful allocation of a new object made
+  // by runtime. Allocations of target space for object evacuation do not
+  // trigger the event. In order to track ALL allocations one must turn off
+  // FLAG_inline_new and FLAG_use_allocation_folding.
+  inline void OnAllocationEvent(HeapObject* object, int size_in_bytes);
+
+  // This event is triggered after object is moved to a new place.
+  inline void OnMoveEvent(HeapObject* target,
+                          HeapObject* source,
+                          int size_in_bytes);
+
  protected:
   // Methods made available to tests.
 
@@ -1466,16 +1495,14 @@ class Heap {
 
   // Allocated a HeapNumber from value.
   MUST_USE_RESULT AllocationResult AllocateHeapNumber(
-      double value, PretenureFlag pretenure = NOT_TENURED);
+      double value,
+      MutableMode mode = IMMUTABLE,
+      PretenureFlag pretenure = NOT_TENURED);
 
   // Allocate a byte array of the specified length
   MUST_USE_RESULT AllocationResult AllocateByteArray(
       int length,
       PretenureFlag pretenure = NOT_TENURED);
-
-  // Allocates an arguments object - optionally with an elements array.
-  MUST_USE_RESULT AllocationResult AllocateArgumentsObject(
-      Object* callee, int length);
 
   // Copy the code and scope info part of the code object, but insert
   // the provided data as the relocation information.
@@ -1513,11 +1540,6 @@ class Heap {
   intptr_t max_executable_size_;
   intptr_t maximum_committed_;
 
-  // The old space growing factor is used in the old space heap growing
-  // strategy. The new old space size is the current old space size times
-  // old_space_growing_factor_.
-  int old_space_growing_factor_;
-
   // For keeping track of how much data has survived
   // scavenge since last new space expansion.
   int survived_since_last_expansion_;
@@ -1526,7 +1548,6 @@ class Heap {
   int sweep_generation_;
 
   int always_allocate_scope_depth_;
-  int linear_allocation_scope_depth_;
 
   // For keeping track of context disposals.
   int contexts_disposed_;
@@ -1552,8 +1573,20 @@ class Heap {
   // Returns the amount of external memory registered since last global gc.
   int64_t PromotedExternalMemorySize();
 
-  unsigned int ms_count_;  // how many mark-sweep collections happened
-  unsigned int gc_count_;  // how many gc happened
+  // How many "runtime allocations" happened.
+  uint32_t allocations_count_;
+
+  // Running hash over allocations performed.
+  uint32_t raw_allocations_hash_;
+
+  // Countdown counter, dumps allocation hash when 0.
+  uint32_t dump_allocations_hash_countdown_;
+
+  // How many mark-sweep collections happened.
+  unsigned int ms_count_;
+
+  // How many gc happened.
+  unsigned int gc_count_;
 
   // For post mortem debugging.
   static const int kRememberedUnmappedPages = 128;
@@ -1585,9 +1618,6 @@ class Heap {
   // which collector to invoke, before expanding a paged space in the old
   // generation and on every allocation in large object space.
   intptr_t old_generation_allocation_limit_;
-
-  // Used to adjust the limits that control the timing of the next GC.
-  intptr_t size_of_old_gen_at_last_old_space_gc_;
 
   // Indicates that an allocation has failed in the old generation since the
   // last GC.
@@ -2008,6 +2038,9 @@ class Heap {
   double promotion_rate_;
   intptr_t semi_space_copied_object_size_;
   double semi_space_copied_rate_;
+  int nodes_died_in_new_space_;
+  int nodes_copied_in_new_space_;
+  int nodes_promoted_;
 
   // This is the pretenuring trigger for allocation sites that are in maybe
   // tenure state. When we switched to the maximum new space size we deoptimize
@@ -2063,6 +2096,10 @@ class Heap {
   Object** weak_object_to_code_table_address() {
     return &weak_object_to_code_table_;
   }
+
+  inline void UpdateAllocationsHash(HeapObject* object);
+  inline void UpdateAllocationsHash(uint32_t value);
+  inline void PrintAlloctionsHash();
 
   static const int kInitialStringTableSize = 2048;
   static const int kInitialEvalCacheSize = 64;
@@ -2145,7 +2182,7 @@ class Heap {
 
   MemoryChunk* chunks_queued_for_free_;
 
-  Mutex relocation_mutex_;
+  base::Mutex relocation_mutex_;
 
   int gc_callbacks_depth_;
 
@@ -2506,6 +2543,9 @@ class GCTracer BASE_EMBEDDED {
       MC_SWEEP,
       MC_SWEEP_NEWSPACE,
       MC_SWEEP_OLDSPACE,
+      MC_SWEEP_CODE,
+      MC_SWEEP_CELL,
+      MC_SWEEP_MAP,
       MC_EVACUATE_PAGES,
       MC_UPDATE_NEW_TO_NEW_POINTERS,
       MC_UPDATE_ROOT_TO_NEW_POINTERS,
@@ -2516,80 +2556,67 @@ class GCTracer BASE_EMBEDDED {
       MC_WEAKCOLLECTION_PROCESS,
       MC_WEAKCOLLECTION_CLEAR,
       MC_FLUSH_CODE,
-      kNumberOfScopes
+      NUMBER_OF_SCOPES
     };
 
     Scope(GCTracer* tracer, ScopeId scope)
         : tracer_(tracer),
         scope_(scope) {
-      start_time_ = OS::TimeCurrentMillis();
+      start_time_ = base::OS::TimeCurrentMillis();
     }
 
     ~Scope() {
-      ASSERT(scope_ < kNumberOfScopes);  // scope_ is unsigned.
-      tracer_->scopes_[scope_] += OS::TimeCurrentMillis() - start_time_;
+      ASSERT(scope_ < NUMBER_OF_SCOPES);  // scope_ is unsigned.
+      tracer_->scopes_[scope_] += base::OS::TimeCurrentMillis() - start_time_;
     }
 
    private:
     GCTracer* tracer_;
     ScopeId scope_;
     double start_time_;
+
+    DISALLOW_COPY_AND_ASSIGN(Scope);
   };
 
   explicit GCTracer(Heap* heap,
+                    GarbageCollector collector,
                     const char* gc_reason,
                     const char* collector_reason);
   ~GCTracer();
 
-  // Sets the collector.
-  void set_collector(GarbageCollector collector) { collector_ = collector; }
-
-  // Sets the GC count.
-  void set_gc_count(unsigned int count) { gc_count_ = count; }
-
-  // Sets the full GC count.
-  void set_full_gc_count(int count) { full_gc_count_ = count; }
-
-  void increment_nodes_died_in_new_space() {
-    nodes_died_in_new_space_++;
-  }
-
-  void increment_nodes_copied_in_new_space() {
-    nodes_copied_in_new_space_++;
-  }
-
-  void increment_nodes_promoted() {
-    nodes_promoted_++;
-  }
-
  private:
   // Returns a string matching the collector.
-  const char* CollectorString();
+  const char* CollectorString() const;
 
-  // Returns size of object in heap (in MB).
-  inline double SizeOfHeapObjects();
+  // Print one detailed trace line in name=value format.
+  void PrintNVP() const;
+
+  // Print one trace line.
+  void Print() const;
 
   // Timestamp set in the constructor.
   double start_time_;
 
+  // Timestamp set in the destructor.
+  double end_time_;
+
   // Size of objects in heap set in constructor.
   intptr_t start_object_size_;
+
+  // Size of objects in heap set in destructor.
+  intptr_t end_object_size_;
 
   // Size of memory allocated from OS set in constructor.
   intptr_t start_memory_size_;
 
+  // Size of memory allocated from OS set in destructor.
+  intptr_t end_memory_size_;
+
   // Type of collector.
   GarbageCollector collector_;
 
-  // A count (including this one, e.g. the first collection is 1) of the
-  // number of garbage collections.
-  unsigned int gc_count_;
-
-  // A count (including this one) of the number of full garbage collections.
-  int full_gc_count_;
-
   // Amounts of time spent in different scopes during GC.
-  double scopes_[Scope::kNumberOfScopes];
+  double scopes_[Scope::NUMBER_OF_SCOPES];
 
   // Total amount of space either wasted or contained in one of free lists
   // before the current GC.
@@ -2603,15 +2630,6 @@ class GCTracer BASE_EMBEDDED {
   // previous collection and the beginning of the current one.
   double spent_in_mutator_;
 
-  // Number of died nodes in the new space.
-  int nodes_died_in_new_space_;
-
-  // Number of copied nodes to the new space.
-  int nodes_copied_in_new_space_;
-
-  // Number of promoted nodes to the old space.
-  int nodes_promoted_;
-
   // Incremental marking steps counters.
   int steps_count_;
   double steps_took_;
@@ -2623,6 +2641,8 @@ class GCTracer BASE_EMBEDDED {
 
   const char* gc_reason_;
   const char* collector_reason_;
+
+  DISALLOW_COPY_AND_ASSIGN(GCTracer);
 };
 
 

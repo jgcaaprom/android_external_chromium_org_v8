@@ -6,13 +6,14 @@
 
 #if V8_TARGET_ARCH_ARM
 
-#include "src/cpu-profiler.h"
-#include "src/unicode.h"
-#include "src/log.h"
 #include "src/code-stubs.h"
-#include "src/regexp-stack.h"
+#include "src/cpu-profiler.h"
+#include "src/log.h"
 #include "src/macro-assembler.h"
 #include "src/regexp-macro-assembler.h"
+#include "src/regexp-stack.h"
+#include "src/unicode.h"
+
 #include "src/arm/regexp-macro-assembler-arm.h"
 
 namespace v8 {
@@ -1010,7 +1011,7 @@ void RegExpMacroAssemblerARM::CallCheckStackGuardState(Register scratch) {
   __ mov(r1, Operand(masm_->CodeObject()));
 
   // We need to make room for the return address on the stack.
-  int stack_alignment = OS::ActivationFrameAlignment();
+  int stack_alignment = base::OS::ActivationFrameAlignment();
   ASSERT(IsAligned(stack_alignment, kPointerSize));
   __ sub(sp, sp, Operand(stack_alignment));
 

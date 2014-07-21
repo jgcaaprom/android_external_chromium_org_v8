@@ -30,11 +30,11 @@
 #include "src/v8.h"
 
 #include "src/api.h"
+#include "src/base/platform/platform.h"
 #include "src/compilation-cache.h"
 #include "src/execution.h"
 #include "src/isolate.h"
 #include "src/parser.h"
-#include "src/platform.h"
 #include "src/smart-pointers.h"
 #include "src/snapshot.h"
 #include "src/unicode-inl.h"
@@ -56,7 +56,7 @@ using ::v8::V8;
 
 
 // Migrating an isolate
-class KangarooThread : public v8::internal::Thread {
+class KangarooThread : public v8::base::Thread {
  public:
   KangarooThread(v8::Isolate* isolate, v8::Handle<v8::Context> context)
       : Thread("KangarooThread"),
@@ -146,7 +146,7 @@ class JoinableThread {
   virtual void Run() = 0;
 
  private:
-  class ThreadWithSemaphore : public i::Thread {
+  class ThreadWithSemaphore : public v8::base::Thread {
    public:
     explicit ThreadWithSemaphore(JoinableThread* joinable_thread)
       : Thread(joinable_thread->name_),
@@ -163,7 +163,7 @@ class JoinableThread {
   };
 
   const char* name_;
-  i::Semaphore semaphore_;
+  v8::base::Semaphore semaphore_;
   ThreadWithSemaphore thread_;
 
   friend class ThreadWithSemaphore;
@@ -247,6 +247,8 @@ class IsolateNonlockingThread : public JoinableThread {
 TEST(MultithreadedParallelIsolates) {
 #if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 10;
+#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT
+  const int kNThreads = 4;
 #else
   const int kNThreads = 50;
 #endif
@@ -713,6 +715,8 @@ class IsolateGenesisThread : public JoinableThread {
 TEST(ExtensionsRegistration) {
 #if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 10;
+#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT
+  const int kNThreads = 4;
 #else
   const int kNThreads = 40;
 #endif

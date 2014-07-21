@@ -4,10 +4,10 @@
 
 #include "src/v8.h"
 
-#include "src/lithium-allocator-inl.h"
 #include "src/arm/lithium-arm.h"
 #include "src/arm/lithium-codegen-arm.h"
 #include "src/hydrogen-osr.h"
+#include "src/lithium-allocator-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -317,8 +317,9 @@ void LAccessArgumentsAt::PrintDataTo(StringStream* stream) {
 
 void LStoreNamedField::PrintDataTo(StringStream* stream) {
   object()->PrintTo(stream);
-  hydrogen()->access().PrintTo(stream);
-  stream->Add(" <- ");
+  OStringStream os;
+  os << hydrogen()->access() << " <- ";
+  stream->Add(os.c_str());
   value()->PrintTo(stream);
 }
 
@@ -1082,7 +1083,7 @@ LInstruction* LChunkBuilder::DoCallJSFunction(
 
 LInstruction* LChunkBuilder::DoCallWithDescriptor(
     HCallWithDescriptor* instr) {
-  const CallInterfaceDescriptor* descriptor = instr->descriptor();
+  const InterfaceDescriptor* descriptor = instr->descriptor();
 
   LOperand* target = UseRegisterOrConstantAtStart(instr->target());
   ZoneList<LOperand*> ops(instr->OperandCount(), zone());
@@ -1500,8 +1501,8 @@ LInstruction* LChunkBuilder::DoMul(HMul* instr) {
     return DefineAsRegister(mul);
 
   } else if (instr->representation().IsDouble()) {
-    if (instr->UseCount() == 1 && (instr->uses().value()->IsAdd() ||
-                                   instr->uses().value()->IsSub())) {
+    if (instr->HasOneUse() && (instr->uses().value()->IsAdd() ||
+                               instr->uses().value()->IsSub())) {
       HBinaryOperation* use = HBinaryOperation::cast(instr->uses().value());
 
       if (use->IsAdd() && instr == use->left()) {
@@ -1547,7 +1548,7 @@ LInstruction* LChunkBuilder::DoSub(HSub* instr) {
     }
     return result;
   } else if (instr->representation().IsDouble()) {
-    if (instr->right()->IsMul()) {
+    if (instr->right()->IsMul() && instr->right()->HasOneUse()) {
       return DoMultiplySub(instr->left(), HMul::cast(instr->right()));
     }
 
@@ -1618,12 +1619,12 @@ LInstruction* LChunkBuilder::DoAdd(HAdd* instr) {
     LInstruction* result = DefineAsRegister(add);
     return result;
   } else if (instr->representation().IsDouble()) {
-    if (instr->left()->IsMul()) {
+    if (instr->left()->IsMul() && instr->left()->HasOneUse()) {
       return DoMultiplyAdd(HMul::cast(instr->left()), instr->right());
     }
 
-    if (instr->right()->IsMul()) {
-      ASSERT(!instr->left()->IsMul());
+    if (instr->right()->IsMul() && instr->right()->HasOneUse()) {
+      ASSERT(!instr->left()->IsMul() || !instr->left()->HasOneUse());
       return DoMultiplyAdd(HMul::cast(instr->right()), instr->left());
     }
 
@@ -2084,7 +2085,8 @@ LInstruction* LChunkBuilder::DoLoadGlobalCell(HLoadGlobalCell* instr) {
 
 LInstruction* LChunkBuilder::DoLoadGlobalGeneric(HLoadGlobalGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* global_object = UseFixed(instr->global_object(), r0);
+  LOperand* global_object = UseFixed(instr->global_object(),
+                                     LoadIC::ReceiverRegister());
   LLoadGlobalGeneric* result =
       new(zone()) LLoadGlobalGeneric(context, global_object);
   return MarkAsCall(DefineFixed(result, r0), instr);
@@ -2138,7 +2140,7 @@ LInstruction* LChunkBuilder::DoLoadNamedField(HLoadNamedField* instr) {
 
 LInstruction* LChunkBuilder::DoLoadNamedGeneric(HLoadNamedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* object = UseFixed(instr->object(), r0);
+  LOperand* object = UseFixed(instr->object(), LoadIC::ReceiverRegister());
   LInstruction* result =
       DefineFixed(new(zone()) LLoadNamedGeneric(context, object), r0);
   return MarkAsCall(result, instr);
@@ -2198,8 +2200,8 @@ LInstruction* LChunkBuilder::DoLoadKeyed(HLoadKeyed* instr) {
 
 LInstruction* LChunkBuilder::DoLoadKeyedGeneric(HLoadKeyedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* object = UseFixed(instr->object(), r1);
-  LOperand* key = UseFixed(instr->key(), r0);
+  LOperand* object = UseFixed(instr->object(), LoadIC::ReceiverRegister());
+  LOperand* key = UseFixed(instr->key(), LoadIC::NameRegister());
 
   LInstruction* result =
       DefineFixed(new(zone()) LLoadKeyedGeneric(context, object, key), r0);
@@ -2253,9 +2255,9 @@ LInstruction* LChunkBuilder::DoStoreKeyed(HStoreKeyed* instr) {
 
 LInstruction* LChunkBuilder::DoStoreKeyedGeneric(HStoreKeyedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* obj = UseFixed(instr->object(), r2);
-  LOperand* key = UseFixed(instr->key(), r1);
-  LOperand* val = UseFixed(instr->value(), r0);
+  LOperand* obj = UseFixed(instr->object(), KeyedStoreIC::ReceiverRegister());
+  LOperand* key = UseFixed(instr->key(), KeyedStoreIC::NameRegister());
+  LOperand* val = UseFixed(instr->value(), KeyedStoreIC::ValueRegister());
 
   ASSERT(instr->object()->representation().IsTagged());
   ASSERT(instr->key()->representation().IsTagged());
@@ -2329,8 +2331,8 @@ LInstruction* LChunkBuilder::DoStoreNamedField(HStoreNamedField* instr) {
 
 LInstruction* LChunkBuilder::DoStoreNamedGeneric(HStoreNamedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* obj = UseFixed(instr->object(), r1);
-  LOperand* val = UseFixed(instr->value(), r0);
+  LOperand* obj = UseFixed(instr->object(), StoreIC::ReceiverRegister());
+  LOperand* val = UseFixed(instr->value(), StoreIC::ValueRegister());
 
   LInstruction* result = new(zone()) LStoreNamedGeneric(context, obj, val);
   return MarkAsCall(result, instr);
@@ -2369,9 +2371,7 @@ LInstruction* LChunkBuilder::DoStringCharFromCode(HStringCharFromCode* instr) {
 LInstruction* LChunkBuilder::DoAllocate(HAllocate* instr) {
   info()->MarkAsDeferredCalling();
   LOperand* context = UseAny(instr->context());
-  LOperand* size = instr->size()->IsConstant()
-      ? UseConstant(instr->size())
-      : UseTempRegister(instr->size());
+  LOperand* size = UseRegisterOrConstant(instr->size());
   LOperand* temp1 = TempRegister();
   LOperand* temp2 = TempRegister();
   LAllocate* result = new(zone()) LAllocate(context, size, temp1, temp2);
@@ -2411,7 +2411,7 @@ LInstruction* LChunkBuilder::DoParameter(HParameter* instr) {
     CodeStubInterfaceDescriptor* descriptor =
         info()->code_stub()->GetInterfaceDescriptor();
     int index = static_cast<int>(instr->index());
-    Register reg = descriptor->GetParameterRegister(index);
+    Register reg = descriptor->GetEnvironmentParameterRegister(index);
     return DefineFixed(result, reg);
   }
 }

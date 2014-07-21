@@ -26,16 +26,17 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/v8.h"
+#include "test/cctest/cctest.h"
 
 #if V8_OS_POSIX
 #include <sys/time.h>  // NOLINT
 #endif
 
-#include "test/cctest/cctest.h"
 #if V8_OS_WIN
 #include "src/base/win32-headers.h"
 #endif
 
+using namespace v8::base;
 using namespace v8::internal;
 
 

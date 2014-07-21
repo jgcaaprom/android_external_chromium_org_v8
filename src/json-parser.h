@@ -358,19 +358,19 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonObject() {
         bool follow_expected = false;
         Handle<Map> target;
         if (seq_ascii) {
-          key = JSObject::ExpectedTransitionKey(map);
+          key = Map::ExpectedTransitionKey(map);
           follow_expected = !key.is_null() && ParseJsonString(key);
         }
         // If the expected transition hits, follow it.
         if (follow_expected) {
-          target = JSObject::ExpectedTransitionTarget(map);
+          target = Map::ExpectedTransitionTarget(map);
         } else {
           // If the expected transition failed, parse an internalized string and
           // try to find a matching transition.
           key = ParseJsonInternalizedString();
           if (key.is_null()) return ReportUnexpectedCharacter();
 
-          target = JSObject::FindTransitionToField(map, key);
+          target = Map::FindTransitionToField(map, key);
           // If a transition was found, follow it and continue.
           transitioning = !target.is_null();
         }
@@ -387,11 +387,9 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonObject() {
           Representation expected_representation = details.representation();
 
           if (value->FitsRepresentation(expected_representation)) {
-            // If the target representation is double and the value is already
-            // double, use the existing box.
-            if (value->IsSmi() && expected_representation.IsDouble()) {
-              value = factory()->NewHeapNumber(
-                  Handle<Smi>::cast(value)->value());
+            if (expected_representation.IsDouble()) {
+              value = Object::NewStorageFor(isolate(), value,
+                                            expected_representation);
             } else if (expected_representation.IsHeapObject() &&
                        !target->instance_descriptors()->GetFieldType(
                            descriptor)->NowContains(value)) {
@@ -528,7 +526,7 @@ Handle<Object> JsonParser<seq_ascii>::ParseJsonNumber() {
     number = StringToDouble(isolate()->unicode_cache(),
                             chars,
                             NO_FLAGS,  // Hex, octal or trailing junk.
-                            OS::nan_value());
+                            base::OS::nan_value());
   } else {
     Vector<uint8_t> buffer = Vector<uint8_t>::New(length);
     String::WriteToFlat(*source_, buffer.start(), beg_pos, position_);

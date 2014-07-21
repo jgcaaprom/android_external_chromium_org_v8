@@ -34,6 +34,7 @@ LOCAL_SRC_FILES := \
 	v8/src/arguments.cc \
 	v8/src/assembler.cc \
 	v8/src/assert-scope.cc \
+	v8/src/ast-value-factory.cc \
 	v8/src/ast.cc \
 	v8/src/bignum-dtoa.cc \
 	v8/src/bignum.cc \
@@ -50,7 +51,6 @@ LOCAL_SRC_FILES := \
 	v8/src/conversions.cc \
 	v8/src/counters.cc \
 	v8/src/cpu-profiler.cc \
-	v8/src/cpu.cc \
 	v8/src/data-flow.cc \
 	v8/src/date.cc \
 	v8/src/dateparser.cc \
@@ -114,9 +114,6 @@ LOCAL_SRC_FILES := \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
 	v8/src/jsregexp.cc \
-	v8/src/libplatform/default-platform.cc \
-	v8/src/libplatform/task-queue.cc \
-	v8/src/libplatform/worker-thread.cc \
 	v8/src/lithium-allocator.cc \
 	v8/src/lithium-codegen.cc \
 	v8/src/lithium.cc \
@@ -131,11 +128,9 @@ LOCAL_SRC_FILES := \
 	v8/src/objects-visiting.cc \
 	v8/src/objects.cc \
 	v8/src/optimizing-compiler-thread.cc \
+	v8/src/ostreams.cc \
 	v8/src/parser.cc \
-	v8/src/platform/time.cc \
-	v8/src/platform/condition-variable.cc \
-	v8/src/platform/mutex.cc \
-	v8/src/platform/semaphore.cc \
+	v8/src/perf-jit.cc \
 	v8/src/preparse-data.cc \
 	v8/src/preparser.cc \
 	v8/src/prettyprinter.cc \
@@ -155,7 +150,7 @@ LOCAL_SRC_FILES := \
 	v8/src/scopeinfo.cc \
 	v8/src/scopes.cc \
 	v8/src/serialize.cc \
-	v8/src/snapshot-common.cc \
+	v8/src/snapshot-source-sink.cc \
 	v8/src/spaces.cc \
 	v8/src/store-buffer.cc \
 	v8/src/string-search.cc \
@@ -170,7 +165,6 @@ LOCAL_SRC_FILES := \
 	v8/src/typing.cc \
 	v8/src/unicode.cc \
 	v8/src/utils.cc \
-	v8/src/utils/random-number-generator.cc \
 	v8/src/v8.cc \
 	v8/src/v8threads.cc \
 	v8/src/variables.cc \
@@ -192,9 +186,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ia32/lithium-ia32.cc \
 	v8/src/ia32/macro-assembler-ia32.cc \
 	v8/src/ia32/regexp-macro-assembler-ia32.cc \
-	v8/src/ia32/stub-cache-ia32.cc \
-	v8/src/platform-posix.cc \
-	v8/src/platform-linux.cc
+	v8/src/ia32/stub-cache-ia32.cc
 
 
 # Flags passed to both C and C++ files.
@@ -229,11 +221,12 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
+	-m32 \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -252,6 +245,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -262,7 +256,6 @@ MY_DEFS_Debug := \
 	'-DVIDEO_HOLE=1' \
 	'-DV8_TARGET_ARCH_IA32' \
 	'-DV8_I18N_SUPPORT' \
-	'-DCAN_USE_VFP_INSTRUCTIONS' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
@@ -302,6 +295,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -339,6 +335,7 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
+	-m32 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -364,6 +361,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -374,7 +372,6 @@ MY_DEFS_Release := \
 	'-DVIDEO_HOLE=1' \
 	'-DV8_TARGET_ARCH_IA32' \
 	'-DV8_I18N_SUPPORT' \
-	'-DCAN_USE_VFP_INSTRUCTIONS' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DUSE_OPENSSL=1' \
@@ -409,6 +406,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -431,6 +431,7 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-m32 \
 	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
@@ -447,6 +448,7 @@ LOCAL_LDFLAGS_Release := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-m32 \
 	-Wl,-O1 \
 	-Wl,--as-needed \
 	-Wl,--gc-sections \

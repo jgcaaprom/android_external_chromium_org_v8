@@ -7,10 +7,13 @@
 
 #include "src/allocation.h"
 #include "src/hashmap.h"
+#include "src/preparse-data-format.h"
 #include "src/utils-inl.h"
 
 namespace v8 {
 namespace internal {
+
+class ScriptData;
 
 
 // Abstract interface for preparse data recorder.
@@ -148,13 +151,17 @@ class CompleteParserRecorder : public ParserRecorder {
                           const char* message,
                           const char* argument_opt,
                           bool is_reference_error_);
-  Vector<unsigned> ExtractData();
+  ScriptData* GetScriptData();
 
- private:
-  bool has_error() {
+  bool HasError() {
     return static_cast<bool>(preamble_[PreparseDataConstants::kHasErrorOffset]);
   }
+  Vector<unsigned> ErrorMessageData() {
+    ASSERT(HasError());
+    return function_store_.ToVector();
+  }
 
+ private:
   void WriteString(Vector<const char> str);
 
   // Write a non-negative number to the symbol store.

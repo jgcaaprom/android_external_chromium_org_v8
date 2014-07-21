@@ -101,6 +101,16 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
+    // Load padding words on stack.
+    __ li(at, Operand(Smi::FromInt(LiveEdit::kFramePaddingValue)));
+    __ Subu(sp, sp,
+            Operand(kPointerSize * LiveEdit::kFramePaddingInitialSize));
+    for (int i = LiveEdit::kFramePaddingInitialSize - 1; i >= 0; i--) {
+      __ sw(at, MemOperand(sp, kPointerSize * i));
+    }
+    __ li(at, Operand(Smi::FromInt(LiveEdit::kFramePaddingInitialSize)));
+    __ push(at);
+
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.
@@ -147,6 +157,9 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
       }
     }
 
+    // Don't bother removing padding bytes pushed on the stack
+    // as the frame is going to be restored right away.
+
     // Leave the internal frame.
   }
 
@@ -172,49 +185,35 @@ void DebugCodegen::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
 
 
 void DebugCodegen::GenerateLoadICDebugBreak(MacroAssembler* masm) {
-  // Calling convention for IC load (from ic-mips.cc).
-  // ----------- S t a t e -------------
-  //  -- a2    : name
-  //  -- ra    : return address
-  //  -- a0    : receiver
-  //  -- [sp]  : receiver
-  // -----------------------------------
-  // Registers a0 and a2 contain objects that need to be pushed on the
-  // expression stack of the fake JS frame.
-  Generate_DebugBreakCallHelper(masm, a0.bit() | a2.bit(), 0);
+  Register receiver = LoadIC::ReceiverRegister();
+  Register name = LoadIC::NameRegister();
+  Generate_DebugBreakCallHelper(masm, receiver.bit() | name.bit(), 0);
 }
 
 
 void DebugCodegen::GenerateStoreICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC store (from ic-mips.cc).
-  // ----------- S t a t e -------------
-  //  -- a0    : value
-  //  -- a1    : receiver
-  //  -- a2    : name
-  //  -- ra    : return address
-  // -----------------------------------
-  // Registers a0, a1, and a2 contain objects that need to be pushed on the
-  // expression stack of the fake JS frame.
-  Generate_DebugBreakCallHelper(masm, a0.bit() | a1.bit() | a2.bit(), 0);
+  Register receiver = StoreIC::ReceiverRegister();
+  Register name = StoreIC::NameRegister();
+  Register value = StoreIC::ValueRegister();
+  Generate_DebugBreakCallHelper(
+      masm, receiver.bit() | name.bit() | value.bit(), 0);
 }
 
 
 void DebugCodegen::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- ra  : return address
-  //  -- a0  : key
-  //  -- a1  : receiver
-  Generate_DebugBreakCallHelper(masm, a0.bit() | a1.bit(), 0);
+  // Calling convention for keyed IC load (from ic-mips.cc).
+  GenerateLoadICDebugBreak(masm);
 }
 
 
 void DebugCodegen::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- a0     : value
-  //  -- a1     : key
-  //  -- a2     : receiver
-  //  -- ra     : return address
-  Generate_DebugBreakCallHelper(masm, a0.bit() | a1.bit() | a2.bit(), 0);
+  // Calling convention for IC keyed store call (from ic-mips.cc).
+  Register receiver = KeyedStoreIC::ReceiverRegister();
+  Register name = KeyedStoreIC::NameRegister();
+  Register value = KeyedStoreIC::ValueRegister();
+  Generate_DebugBreakCallHelper(
+      masm, receiver.bit() | name.bit() | value.bit(), 0);
 }
 
 
@@ -290,16 +289,36 @@ void DebugCodegen::GenerateSlotDebugBreak(MacroAssembler* masm) {
 
 
 void DebugCodegen::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
-  masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnMips);
+  __ Ret();
 }
 
 
 void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
-  masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnMips);
+  ExternalReference restarter_frame_function_slot =
+      ExternalReference::debug_restarter_frame_function_pointer_address(
+          masm->isolate());
+  __ li(at, Operand(restarter_frame_function_slot));
+  __ sw(zero_reg, MemOperand(at, 0));
+
+  // We do not know our frame height, but set sp based on fp.
+  __ Subu(sp, fp, Operand(kPointerSize));
+
+  __ Pop(ra, fp, a1);  // Return address, Frame, Function.
+
+  // Load context from the function.
+  __ lw(cp, FieldMemOperand(a1, JSFunction::kContextOffset));
+
+  // Get function code.
+  __ lw(at, FieldMemOperand(a1, JSFunction::kSharedFunctionInfoOffset));
+  __ lw(at, FieldMemOperand(at, SharedFunctionInfo::kCodeOffset));
+  __ Addu(t9, at, Operand(Code::kHeaderSize - kHeapObjectTag));
+
+  // Re-run JSFunction, a1 is function, cp is context.
+  __ Jump(t9);
 }
 
 
-const bool LiveEdit::kFrameDropperSupported = false;
+const bool LiveEdit::kFrameDropperSupported = true;
 
 #undef __
 

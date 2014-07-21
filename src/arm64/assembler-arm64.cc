@@ -33,6 +33,7 @@
 #define ARM64_DEFINE_REG_STATICS
 
 #include "src/arm64/assembler-arm64-inl.h"
+#include "src/base/cpu.h"
 
 namespace v8 {
 namespace internal {
@@ -47,9 +48,9 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
     // csp will always be aligned if it is enabled by probing at runtime.
     if (FLAG_enable_always_align_csp) supported_ |= 1u << ALWAYS_ALIGN_CSP;
   } else {
-    CPU cpu;
-    if (FLAG_enable_always_align_csp && (cpu.implementer() == CPU::NVIDIA ||
-                                         FLAG_debug_code)) {
+    base::CPU cpu;
+    if (FLAG_enable_always_align_csp &&
+        (cpu.implementer() == base::CPU::NVIDIA || FLAG_debug_code)) {
       supported_ |= 1u << ALWAYS_ALIGN_CSP;
     }
   }
@@ -190,7 +191,7 @@ void RelocInfo::PatchCode(byte* instructions, int instruction_count) {
   }
 
   // Indicate that code has changed.
-  CPU::FlushICache(pc_, instruction_count * kInstructionSize);
+  CpuFeatures::FlushICache(pc_, instruction_count * kInstructionSize);
 }
 
 
@@ -296,10 +297,257 @@ bool Operand::NeedsRelocation(const Assembler* assembler) const {
 }
 
 
-// Assembler
+// Constant Pool.
+void ConstPool::RecordEntry(intptr_t data,
+                            RelocInfo::Mode mode) {
+  ASSERT(mode != RelocInfo::COMMENT &&
+         mode != RelocInfo::POSITION &&
+         mode != RelocInfo::STATEMENT_POSITION &&
+         mode != RelocInfo::CONST_POOL &&
+         mode != RelocInfo::VENEER_POOL &&
+         mode != RelocInfo::CODE_AGE_SEQUENCE);
 
+  uint64_t raw_data = static_cast<uint64_t>(data);
+  int offset = assm_->pc_offset();
+  if (IsEmpty()) {
+    first_use_ = offset;
+  }
+
+  std::pair<uint64_t, int> entry = std::make_pair(raw_data, offset);
+  if (CanBeShared(mode)) {
+    shared_entries_.insert(entry);
+    if (shared_entries_.count(entry.first) == 1) {
+      shared_entries_count++;
+    }
+  } else {
+    unique_entries_.push_back(entry);
+  }
+
+  if (EntryCount() > Assembler::kApproxMaxPoolEntryCount) {
+    // Request constant pool emission after the next instruction.
+    assm_->SetNextConstPoolCheckIn(1);
+  }
+}
+
+
+int ConstPool::DistanceToFirstUse() {
+  ASSERT(first_use_ >= 0);
+  return assm_->pc_offset() - first_use_;
+}
+
+
+int ConstPool::MaxPcOffset() {
+  // There are no pending entries in the pool so we can never get out of
+  // range.
+  if (IsEmpty()) return kMaxInt;
+
+  // Entries are not necessarily emitted in the order they are added so in the
+  // worst case the first constant pool use will be accessing the last entry.
+  return first_use_ + kMaxLoadLiteralRange - WorstCaseSize();
+}
+
+
+int ConstPool::WorstCaseSize() {
+  if (IsEmpty()) return 0;
+
+  // Max size prologue:
+  //   b   over
+  //   ldr xzr, #pool_size
+  //   blr xzr
+  //   nop
+  // All entries are 64-bit for now.
+  return 4 * kInstructionSize + EntryCount() * kPointerSize;
+}
+
+
+int ConstPool::SizeIfEmittedAtCurrentPc(bool require_jump) {
+  if (IsEmpty()) return 0;
+
+  // Prologue is:
+  //   b   over  ;; if require_jump
+  //   ldr xzr, #pool_size
+  //   blr xzr
+  //   nop       ;; if not 64-bit aligned
+  int prologue_size = require_jump ? kInstructionSize : 0;
+  prologue_size += 2 * kInstructionSize;
+  prologue_size += IsAligned(assm_->pc_offset() + prologue_size, 8) ?
+                   0 : kInstructionSize;
+
+  // All entries are 64-bit for now.
+  return prologue_size + EntryCount() * kPointerSize;
+}
+
+
+void ConstPool::Emit(bool require_jump) {
+  ASSERT(!assm_->is_const_pool_blocked());
+  // Prevent recursive pool emission and protect from veneer pools.
+  Assembler::BlockPoolsScope block_pools(assm_);
+
+  int size = SizeIfEmittedAtCurrentPc(require_jump);
+  Label size_check;
+  assm_->bind(&size_check);
+
+  assm_->RecordConstPool(size);
+  // Emit the constant pool. It is preceded by an optional branch if
+  // require_jump and a header which will:
+  //  1) Encode the size of the constant pool, for use by the disassembler.
+  //  2) Terminate the program, to try to prevent execution from accidentally
+  //     flowing into the constant pool.
+  //  3) align the pool entries to 64-bit.
+  // The header is therefore made of up to three arm64 instructions:
+  //   ldr xzr, #<size of the constant pool in 32-bit words>
+  //   blr xzr
+  //   nop
+  //
+  // If executed, the header will likely segfault and lr will point to the
+  // instruction following the offending blr.
+  // TODO(all): Make the alignment part less fragile. Currently code is
+  // allocated as a byte array so there are no guarantees the alignment will
+  // be preserved on compaction. Currently it works as allocation seems to be
+  // 64-bit aligned.
+
+  // Emit branch if required
+  Label after_pool;
+  if (require_jump) {
+    assm_->b(&after_pool);
+  }
+
+  // Emit the header.
+  assm_->RecordComment("[ Constant Pool");
+  EmitMarker();
+  EmitGuard();
+  assm_->Align(8);
+
+  // Emit constant pool entries.
+  // TODO(all): currently each relocated constant is 64 bits, consider adding
+  // support for 32-bit entries.
+  EmitEntries();
+  assm_->RecordComment("]");
+
+  if (after_pool.is_linked()) {
+    assm_->bind(&after_pool);
+  }
+
+  ASSERT(assm_->SizeOfCodeGeneratedSince(&size_check) ==
+         static_cast<unsigned>(size));
+}
+
+
+void ConstPool::Clear() {
+  shared_entries_.clear();
+  shared_entries_count = 0;
+  unique_entries_.clear();
+  first_use_ = -1;
+}
+
+
+bool ConstPool::CanBeShared(RelocInfo::Mode mode) {
+  // Constant pool currently does not support 32-bit entries.
+  ASSERT(mode != RelocInfo::NONE32);
+
+  return RelocInfo::IsNone(mode) ||
+         (!assm_->serializer_enabled() && (mode >= RelocInfo::CELL));
+}
+
+
+void ConstPool::EmitMarker() {
+  // A constant pool size is expressed in number of 32-bits words.
+  // Currently all entries are 64-bit.
+  // + 1 is for the crash guard.
+  // + 0/1 for alignment.
+  int word_count = EntryCount() * 2 + 1 +
+                   (IsAligned(assm_->pc_offset(), 8) ? 0 : 1);
+  assm_->Emit(LDR_x_lit                          |
+              Assembler::ImmLLiteral(word_count) |
+              Assembler::Rt(xzr));
+}
+
+
+MemOperand::PairResult MemOperand::AreConsistentForPair(
+    const MemOperand& operandA,
+    const MemOperand& operandB,
+    int access_size_log2) {
+  ASSERT(access_size_log2 >= 0);
+  ASSERT(access_size_log2 <= 3);
+  // Step one: check that they share the same base, that the mode is Offset
+  // and that the offset is a multiple of access size.
+  if (!operandA.base().Is(operandB.base()) ||
+      (operandA.addrmode() != Offset) ||
+      (operandB.addrmode() != Offset) ||
+      ((operandA.offset() & ((1 << access_size_log2) - 1)) != 0)) {
+    return kNotPair;
+  }
+  // Step two: check that the offsets are contiguous and that the range
+  // is OK for ldp/stp.
+  if ((operandB.offset() == operandA.offset() + (1 << access_size_log2)) &&
+      is_int7(operandA.offset() >> access_size_log2)) {
+    return kPairAB;
+  }
+  if ((operandA.offset() == operandB.offset() + (1 << access_size_log2)) &&
+      is_int7(operandB.offset() >> access_size_log2)) {
+    return kPairBA;
+  }
+  return kNotPair;
+}
+
+
+void ConstPool::EmitGuard() {
+#ifdef DEBUG
+  Instruction* instr = reinterpret_cast<Instruction*>(assm_->pc());
+  ASSERT(instr->preceding()->IsLdrLiteralX() &&
+         instr->preceding()->Rt() == xzr.code());
+#endif
+  assm_->EmitPoolGuard();
+}
+
+
+void ConstPool::EmitEntries() {
+  ASSERT(IsAligned(assm_->pc_offset(), 8));
+
+  typedef std::multimap<uint64_t, int>::const_iterator SharedEntriesIterator;
+  SharedEntriesIterator value_it;
+  // Iterate through the keys (constant pool values).
+  for (value_it = shared_entries_.begin();
+       value_it != shared_entries_.end();
+       value_it = shared_entries_.upper_bound(value_it->first)) {
+    std::pair<SharedEntriesIterator, SharedEntriesIterator> range;
+    uint64_t data = value_it->first;
+    range = shared_entries_.equal_range(data);
+    SharedEntriesIterator offset_it;
+    // Iterate through the offsets of a given key.
+    for (offset_it = range.first; offset_it != range.second; offset_it++) {
+      Instruction* instr = assm_->InstructionAt(offset_it->second);
+
+      // Instruction to patch must be 'ldr rd, [pc, #offset]' with offset == 0.
+      ASSERT(instr->IsLdrLiteral() && instr->ImmLLiteral() == 0);
+      instr->SetImmPCOffsetTarget(assm_->pc());
+    }
+    assm_->dc64(data);
+  }
+  shared_entries_.clear();
+  shared_entries_count = 0;
+
+  // Emit unique entries.
+  std::vector<std::pair<uint64_t, int> >::const_iterator unique_it;
+  for (unique_it = unique_entries_.begin();
+       unique_it != unique_entries_.end();
+       unique_it++) {
+    Instruction* instr = assm_->InstructionAt(unique_it->second);
+
+    // Instruction to patch must be 'ldr rd, [pc, #offset]' with offset == 0.
+    ASSERT(instr->IsLdrLiteral() && instr->ImmLLiteral() == 0);
+    instr->SetImmPCOffsetTarget(assm_->pc());
+    assm_->dc64(unique_it->first);
+  }
+  unique_entries_.clear();
+  first_use_ = -1;
+}
+
+
+// Assembler
 Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
     : AssemblerBase(isolate, buffer, buffer_size),
+      constpool_(this),
       recorded_ast_id_(TypeFeedbackId::None()),
       unresolved_branches_(),
       positions_recorder_(this) {
@@ -310,7 +558,7 @@ Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
 
 
 Assembler::~Assembler() {
-  ASSERT(num_pending_reloc_info_ == 0);
+  ASSERT(constpool_.IsEmpty());
   ASSERT(const_pool_blocked_nesting_ == 0);
   ASSERT(veneer_pool_blocked_nesting_ == 0);
 }
@@ -327,11 +575,10 @@ void Assembler::Reset() {
   pc_ = buffer_;
   reloc_info_writer.Reposition(reinterpret_cast<byte*>(buffer_ + buffer_size_),
                                reinterpret_cast<byte*>(pc_));
-  num_pending_reloc_info_ = 0;
+  constpool_.Clear();
   next_constant_pool_check_ = 0;
   next_veneer_pool_check_ = kMaxInt;
   no_const_pool_before_ = 0;
-  first_const_pool_use_ = -1;
   ClearRecordedAstId();
 }
 
@@ -339,7 +586,7 @@ void Assembler::Reset() {
 void Assembler::GetCode(CodeDesc* desc) {
   // Emit constant pool if necessary.
   CheckConstPool(true, false);
-  ASSERT(num_pending_reloc_info_ == 0);
+  ASSERT(constpool_.IsEmpty());
 
   // Set up code descriptor.
   if (desc) {
@@ -622,8 +869,7 @@ void Assembler::StartBlockConstPool() {
 void Assembler::EndBlockConstPool() {
   if (--const_pool_blocked_nesting_ == 0) {
     // Check the constant pool hasn't been blocked for too long.
-    ASSERT((num_pending_reloc_info_ == 0) ||
-           (pc_offset() < (first_const_pool_use_ + kMaxDistToConstPool)));
+    ASSERT(pc_offset() < constpool_.MaxPcOffset());
     // Two cases:
     //  * no_const_pool_before_ >= next_constant_pool_check_ and the emission is
     //    still blocked
@@ -682,29 +928,10 @@ int Assembler::ConstantPoolSizeAt(Instruction* instr) {
 }
 
 
-void Assembler::ConstantPoolMarker(uint32_t size) {
-  ASSERT(is_const_pool_blocked());
-  // + 1 is for the crash guard.
-  Emit(LDR_x_lit | ImmLLiteral(size + 1) | Rt(xzr));
-}
-
-
 void Assembler::EmitPoolGuard() {
   // We must generate only one instruction as this is used in scopes that
   // control the size of the code generated.
   Emit(BLR | Rn(xzr));
-}
-
-
-void Assembler::ConstantPoolGuard() {
-#ifdef DEBUG
-  // Currently this is only used after a constant pool marker.
-  ASSERT(is_const_pool_blocked());
-  Instruction* instr = reinterpret_cast<Instruction*>(pc_);
-  ASSERT(instr->preceding()->IsLdrLiteralX() &&
-         instr->preceding()->Rt() == xzr.code());
-#endif
-  EmitPoolGuard();
 }
 
 
@@ -1877,6 +2104,15 @@ void Assembler::MoveWide(const Register& rd,
                          uint64_t imm,
                          int shift,
                          MoveWideImmediateOp mov_op) {
+  // Ignore the top 32 bits of an immediate if we're moving to a W register.
+  if (rd.Is32Bits()) {
+    // Check that the top 32 bits are zero (a positive 32-bit number) or top
+    // 33 bits are one (a negative 32-bit number, sign extended to 64 bits).
+    ASSERT(((imm >> kWRegSizeInBits) == 0) ||
+           ((imm >> (kWRegSizeInBits - 1)) == 0x1ffffffff));
+    imm &= kWRegMask;
+  }
+
   if (shift >= 0) {
     // Explicit shift specified.
     ASSERT((shift == 0) || (shift == 16) || (shift == 32) || (shift == 48));
@@ -2282,91 +2518,198 @@ bool Assembler::IsImmLogical(uint64_t value,
   ASSERT((n != NULL) && (imm_s != NULL) && (imm_r != NULL));
   ASSERT((width == kWRegSizeInBits) || (width == kXRegSizeInBits));
 
+  bool negate = false;
+
   // Logical immediates are encoded using parameters n, imm_s and imm_r using
   // the following table:
   //
-  //  N   imms    immr    size        S             R
-  //  1  ssssss  rrrrrr    64    UInt(ssssss)  UInt(rrrrrr)
-  //  0  0sssss  xrrrrr    32    UInt(sssss)   UInt(rrrrr)
-  //  0  10ssss  xxrrrr    16    UInt(ssss)    UInt(rrrr)
-  //  0  110sss  xxxrrr     8    UInt(sss)     UInt(rrr)
-  //  0  1110ss  xxxxrr     4    UInt(ss)      UInt(rr)
-  //  0  11110s  xxxxxr     2    UInt(s)       UInt(r)
+  //    N   imms    immr    size        S             R
+  //    1  ssssss  rrrrrr    64    UInt(ssssss)  UInt(rrrrrr)
+  //    0  0sssss  xrrrrr    32    UInt(sssss)   UInt(rrrrr)
+  //    0  10ssss  xxrrrr    16    UInt(ssss)    UInt(rrrr)
+  //    0  110sss  xxxrrr     8    UInt(sss)     UInt(rrr)
+  //    0  1110ss  xxxxrr     4    UInt(ss)      UInt(rr)
+  //    0  11110s  xxxxxr     2    UInt(s)       UInt(r)
   // (s bits must not be all set)
   //
-  // A pattern is constructed of size bits, where the least significant S+1
-  // bits are set. The pattern is rotated right by R, and repeated across a
-  // 32 or 64-bit value, depending on destination register width.
+  // A pattern is constructed of size bits, where the least significant S+1 bits
+  // are set. The pattern is rotated right by R, and repeated across a 32 or
+  // 64-bit value, depending on destination register width.
   //
-  // To test if an arbitary immediate can be encoded using this scheme, an
-  // iterative algorithm is used.
+  // Put another way: the basic format of a logical immediate is a single
+  // contiguous stretch of 1 bits, repeated across the whole word at intervals
+  // given by a power of 2. To identify them quickly, we first locate the
+  // lowest stretch of 1 bits, then the next 1 bit above that; that combination
+  // is different for every logical immediate, so it gives us all the
+  // information we need to identify the only logical immediate that our input
+  // could be, and then we simply check if that's the value we actually have.
   //
-  // TODO(mcapewel) This code does not consider using X/W register overlap to
-  // support 64-bit immediates where the top 32-bits are zero, and the bottom
-  // 32-bits are an encodable logical immediate.
+  // (The rotation parameter does give the possibility of the stretch of 1 bits
+  // going 'round the end' of the word. To deal with that, we observe that in
+  // any situation where that happens the bitwise NOT of the value is also a
+  // valid logical immediate. So we simply invert the input whenever its low bit
+  // is set, and then we know that the rotated case can't arise.)
 
-  // 1. If the value has all set or all clear bits, it can't be encoded.
-  if ((value == 0) || (value == 0xffffffffffffffffUL) ||
-      ((width == kWRegSizeInBits) && (value == 0xffffffff))) {
-    return false;
+  if (value & 1) {
+    // If the low bit is 1, negate the value, and set a flag to remember that we
+    // did (so that we can adjust the return values appropriately).
+    negate = true;
+    value = ~value;
   }
 
-  unsigned lead_zero = CountLeadingZeros(value, width);
-  unsigned lead_one = CountLeadingZeros(~value, width);
-  unsigned trail_zero = CountTrailingZeros(value, width);
-  unsigned trail_one = CountTrailingZeros(~value, width);
-  unsigned set_bits = CountSetBits(value, width);
+  if (width == kWRegSizeInBits) {
+    // To handle 32-bit logical immediates, the very easiest thing is to repeat
+    // the input value twice to make a 64-bit word. The correct encoding of that
+    // as a logical immediate will also be the correct encoding of the 32-bit
+    // value.
 
-  // The fixed bits in the immediate s field.
-  // If width == 64 (X reg), start at 0xFFFFFF80.
-  // If width == 32 (W reg), start at 0xFFFFFFC0, as the iteration for 64-bit
-  // widths won't be executed.
-  int imm_s_fixed = (width == kXRegSizeInBits) ? -128 : -64;
-  int imm_s_mask = 0x3F;
+    // The most-significant 32 bits may not be zero (ie. negate is true) so
+    // shift the value left before duplicating it.
+    value <<= kWRegSizeInBits;
+    value |= value >> kWRegSizeInBits;
+  }
 
-  for (;;) {
-    // 2. If the value is two bits wide, it can be encoded.
-    if (width == 2) {
-      *n = 0;
-      *imm_s = 0x3C;
-      *imm_r = (value & 3) - 1;
-      return true;
-    }
+  // The basic analysis idea: imagine our input word looks like this.
+  //
+  //    0011111000111110001111100011111000111110001111100011111000111110
+  //                                                          c  b    a
+  //                                                          |<--d-->|
+  //
+  // We find the lowest set bit (as an actual power-of-2 value, not its index)
+  // and call it a. Then we add a to our original number, which wipes out the
+  // bottommost stretch of set bits and replaces it with a 1 carried into the
+  // next zero bit. Then we look for the new lowest set bit, which is in
+  // position b, and subtract it, so now our number is just like the original
+  // but with the lowest stretch of set bits completely gone. Now we find the
+  // lowest set bit again, which is position c in the diagram above. Then we'll
+  // measure the distance d between bit positions a and c (using CLZ), and that
+  // tells us that the only valid logical immediate that could possibly be equal
+  // to this number is the one in which a stretch of bits running from a to just
+  // below b is replicated every d bits.
+  uint64_t a = LargestPowerOf2Divisor(value);
+  uint64_t value_plus_a = value + a;
+  uint64_t b = LargestPowerOf2Divisor(value_plus_a);
+  uint64_t value_plus_a_minus_b = value_plus_a - b;
+  uint64_t c = LargestPowerOf2Divisor(value_plus_a_minus_b);
 
-    *n = (width == 64) ? 1 : 0;
-    *imm_s = ((imm_s_fixed | (set_bits - 1)) & imm_s_mask);
-    if ((lead_zero + set_bits) == width) {
-      *imm_r = 0;
+  int d, clz_a, out_n;
+  uint64_t mask;
+
+  if (c != 0) {
+    // The general case, in which there is more than one stretch of set bits.
+    // Compute the repeat distance d, and set up a bitmask covering the basic
+    // unit of repetition (i.e. a word with the bottom d bits set). Also, in all
+    // of these cases the N bit of the output will be zero.
+    clz_a = CountLeadingZeros(a, kXRegSizeInBits);
+    int clz_c = CountLeadingZeros(c, kXRegSizeInBits);
+    d = clz_a - clz_c;
+    mask = ((V8_UINT64_C(1) << d) - 1);
+    out_n = 0;
+  } else {
+    // Handle degenerate cases.
+    //
+    // If any of those 'find lowest set bit' operations didn't find a set bit at
+    // all, then the word will have been zero thereafter, so in particular the
+    // last lowest_set_bit operation will have returned zero. So we can test for
+    // all the special case conditions in one go by seeing if c is zero.
+    if (a == 0) {
+      // The input was zero (or all 1 bits, which will come to here too after we
+      // inverted it at the start of the function), for which we just return
+      // false.
+      return false;
     } else {
-      *imm_r = (lead_zero > 0) ? (width - trail_zero) : lead_one;
+      // Otherwise, if c was zero but a was not, then there's just one stretch
+      // of set bits in our word, meaning that we have the trivial case of
+      // d == 64 and only one 'repetition'. Set up all the same variables as in
+      // the general case above, and set the N bit in the output.
+      clz_a = CountLeadingZeros(a, kXRegSizeInBits);
+      d = 64;
+      mask = ~V8_UINT64_C(0);
+      out_n = 1;
     }
+  }
 
-    // 3. If the sum of leading zeros, trailing zeros and set bits is equal to
-    //    the bit width of the value, it can be encoded.
-    if (lead_zero + trail_zero + set_bits == width) {
-      return true;
-    }
-
-    // 4. If the sum of leading ones, trailing ones and unset bits in the
-    //    value is equal to the bit width of the value, it can be encoded.
-    if (lead_one + trail_one + (width - set_bits) == width) {
-      return true;
-    }
-
-    // 5. If the most-significant half of the bitwise value is equal to the
-    //    least-significant half, return to step 2 using the least-significant
-    //    half of the value.
-    uint64_t mask = (1UL << (width >> 1)) - 1;
-    if ((value & mask) == ((value >> (width >> 1)) & mask)) {
-      width >>= 1;
-      set_bits >>= 1;
-      imm_s_fixed >>= 1;
-      continue;
-    }
-
-    // 6. Otherwise, the value can't be encoded.
+  // If the repeat period d is not a power of two, it can't be encoded.
+  if (!IS_POWER_OF_TWO(d)) {
     return false;
   }
+
+  if (((b - a) & ~mask) != 0) {
+    // If the bit stretch (b - a) does not fit within the mask derived from the
+    // repeat period, then fail.
+    return false;
+  }
+
+  // The only possible option is b - a repeated every d bits. Now we're going to
+  // actually construct the valid logical immediate derived from that
+  // specification, and see if it equals our original input.
+  //
+  // To repeat a value every d bits, we multiply it by a number of the form
+  // (1 + 2^d + 2^(2d) + ...), i.e. 0x0001000100010001 or similar. These can
+  // be derived using a table lookup on CLZ(d).
+  static const uint64_t multipliers[] = {
+    0x0000000000000001UL,
+    0x0000000100000001UL,
+    0x0001000100010001UL,
+    0x0101010101010101UL,
+    0x1111111111111111UL,
+    0x5555555555555555UL,
+  };
+  int multiplier_idx = CountLeadingZeros(d, kXRegSizeInBits) - 57;
+  // Ensure that the index to the multipliers array is within bounds.
+  ASSERT((multiplier_idx >= 0) &&
+         (static_cast<size_t>(multiplier_idx) <
+          (sizeof(multipliers) / sizeof(multipliers[0]))));
+  uint64_t multiplier = multipliers[multiplier_idx];
+  uint64_t candidate = (b - a) * multiplier;
+
+  if (value != candidate) {
+    // The candidate pattern doesn't match our input value, so fail.
+    return false;
+  }
+
+  // We have a match! This is a valid logical immediate, so now we have to
+  // construct the bits and pieces of the instruction encoding that generates
+  // it.
+
+  // Count the set bits in our basic stretch. The special case of clz(0) == -1
+  // makes the answer come out right for stretches that reach the very top of
+  // the word (e.g. numbers like 0xffffc00000000000).
+  int clz_b = (b == 0) ? -1 : CountLeadingZeros(b, kXRegSizeInBits);
+  int s = clz_a - clz_b;
+
+  // Decide how many bits to rotate right by, to put the low bit of that basic
+  // stretch in position a.
+  int r;
+  if (negate) {
+    // If we inverted the input right at the start of this function, here's
+    // where we compensate: the number of set bits becomes the number of clear
+    // bits, and the rotation count is based on position b rather than position
+    // a (since b is the location of the 'lowest' 1 bit after inversion).
+    s = d - s;
+    r = (clz_b + 1) & (d - 1);
+  } else {
+    r = (clz_a + 1) & (d - 1);
+  }
+
+  // Now we're done, except for having to encode the S output in such a way that
+  // it gives both the number of set bits and the length of the repeated
+  // segment. The s field is encoded like this:
+  //
+  //     imms    size        S
+  //    ssssss    64    UInt(ssssss)
+  //    0sssss    32    UInt(sssss)
+  //    10ssss    16    UInt(ssss)
+  //    110sss     8    UInt(sss)
+  //    1110ss     4    UInt(ss)
+  //    11110s     2    UInt(s)
+  //
+  // So we 'or' (-d << 1) with our computed s to form imms.
+  *n = out_n;
+  *imm_s = ((-d << 1) | (s - 1)) & 0x3f;
+  *imm_r = r;
+
+  return true;
 }
 
 
@@ -2466,15 +2809,7 @@ void Assembler::GrowBuffer() {
   // buffer nor pc absolute pointing inside the code buffer, so there is no need
   // to relocate any emitted relocation entries.
 
-  // Relocate pending relocation entries.
-  for (int i = 0; i < num_pending_reloc_info_; i++) {
-    RelocInfo& rinfo = pending_reloc_info_[i];
-    ASSERT(rinfo.rmode() != RelocInfo::COMMENT &&
-           rinfo.rmode() != RelocInfo::POSITION);
-    if (rinfo.rmode() != RelocInfo::JS_RETURN) {
-      rinfo.set_pc(rinfo.pc() + pc_delta);
-    }
-  }
+  // Pending relocation entries are also relative, no need to relocate.
 }
 
 
@@ -2494,11 +2829,7 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
            || RelocInfo::IsVeneerPool(rmode));
     // These modes do not need an entry in the constant pool.
   } else {
-    ASSERT(num_pending_reloc_info_ < kMaxNumPendingRelocInfo);
-    if (num_pending_reloc_info_ == 0) {
-      first_const_pool_use_ = pc_offset();
-    }
-    pending_reloc_info_[num_pending_reloc_info_++] = rinfo;
+    constpool_.RecordEntry(data, rmode);
     // Make sure the constant pool is not emitted in place of the next
     // instruction for which we just recorded relocation info.
     BlockConstPoolFor(1);
@@ -2526,11 +2857,9 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
 void Assembler::BlockConstPoolFor(int instructions) {
   int pc_limit = pc_offset() + instructions * kInstructionSize;
   if (no_const_pool_before_ < pc_limit) {
-    // If there are some pending entries, the constant pool cannot be blocked
-    // further than first_const_pool_use_ + kMaxDistToConstPool
-    ASSERT((num_pending_reloc_info_ == 0) ||
-           (pc_limit < (first_const_pool_use_ + kMaxDistToConstPool)));
     no_const_pool_before_ = pc_limit;
+    // Make sure the pool won't be blocked for too long.
+    ASSERT(pc_limit < constpool_.MaxPcOffset());
   }
 
   if (next_constant_pool_check_ < no_const_pool_before_) {
@@ -2550,106 +2879,48 @@ void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
   }
 
   // There is nothing to do if there are no pending constant pool entries.
-  if (num_pending_reloc_info_ == 0)  {
+  if (constpool_.IsEmpty())  {
     // Calculate the offset of the next check.
-    next_constant_pool_check_ = pc_offset() + kCheckConstPoolInterval;
+    SetNextConstPoolCheckIn(kCheckConstPoolInterval);
     return;
   }
 
   // We emit a constant pool when:
   //  * requested to do so by parameter force_emit (e.g. after each function).
   //  * the distance to the first instruction accessing the constant pool is
-  //    kAvgDistToConstPool or more.
-  //  * no jump is required and the distance to the first instruction accessing
-  //    the constant pool is at least kMaxDistToPConstool / 2.
-  ASSERT(first_const_pool_use_ >= 0);
-  int dist = pc_offset() - first_const_pool_use_;
-  if (!force_emit && dist < kAvgDistToConstPool &&
-      (require_jump || (dist < (kMaxDistToConstPool / 2)))) {
+  //    kApproxMaxDistToConstPool or more.
+  //  * the number of entries in the pool is kApproxMaxPoolEntryCount or more.
+  int dist = constpool_.DistanceToFirstUse();
+  int count = constpool_.EntryCount();
+  if (!force_emit &&
+      (dist < kApproxMaxDistToConstPool) &&
+      (count < kApproxMaxPoolEntryCount)) {
     return;
   }
 
-  int jump_instr = require_jump ? kInstructionSize : 0;
-  int size_pool_marker = kInstructionSize;
-  int size_pool_guard = kInstructionSize;
-  int pool_size = jump_instr + size_pool_marker + size_pool_guard +
-    num_pending_reloc_info_ * kPointerSize;
-  int needed_space = pool_size + kGap;
 
   // Emit veneers for branches that would go out of range during emission of the
   // constant pool.
-  CheckVeneerPool(false, require_jump, kVeneerDistanceMargin + pool_size);
-
-  Label size_check;
-  bind(&size_check);
+  int worst_case_size = constpool_.WorstCaseSize();
+  CheckVeneerPool(false, require_jump,
+                  kVeneerDistanceMargin + worst_case_size);
 
   // Check that the code buffer is large enough before emitting the constant
-  // pool (include the jump over the pool, the constant pool marker, the
-  // constant pool guard, and the gap to the relocation information).
+  // pool (this includes the gap to the relocation information).
+  int needed_space = worst_case_size + kGap + 1 * kInstructionSize;
   while (buffer_space() <= needed_space) {
     GrowBuffer();
   }
 
-  {
-    // Block recursive calls to CheckConstPool and protect from veneer pools.
-    BlockPoolsScope block_pools(this);
-    RecordConstPool(pool_size);
-
-    // Emit jump over constant pool if necessary.
-    Label after_pool;
-    if (require_jump) {
-      b(&after_pool);
-    }
-
-    // Emit a constant pool header. The header has two goals:
-    //  1) Encode the size of the constant pool, for use by the disassembler.
-    //  2) Terminate the program, to try to prevent execution from accidentally
-    //     flowing into the constant pool.
-    // The header is therefore made of two arm64 instructions:
-    //   ldr xzr, #<size of the constant pool in 32-bit words>
-    //   blr xzr
-    // If executed the code will likely segfault and lr will point to the
-    // beginning of the constant pool.
-    // TODO(all): currently each relocated constant is 64 bits, consider adding
-    // support for 32-bit entries.
-    RecordComment("[ Constant Pool");
-    ConstantPoolMarker(2 * num_pending_reloc_info_);
-    ConstantPoolGuard();
-
-    // Emit constant pool entries.
-    for (int i = 0; i < num_pending_reloc_info_; i++) {
-      RelocInfo& rinfo = pending_reloc_info_[i];
-      ASSERT(rinfo.rmode() != RelocInfo::COMMENT &&
-             rinfo.rmode() != RelocInfo::POSITION &&
-             rinfo.rmode() != RelocInfo::STATEMENT_POSITION &&
-             rinfo.rmode() != RelocInfo::CONST_POOL &&
-             rinfo.rmode() != RelocInfo::VENEER_POOL);
-
-      Instruction* instr = reinterpret_cast<Instruction*>(rinfo.pc());
-      // Instruction to patch must be 'ldr rd, [pc, #offset]' with offset == 0.
-      ASSERT(instr->IsLdrLiteral() &&
-             instr->ImmLLiteral() == 0);
-
-      instr->SetImmPCOffsetTarget(reinterpret_cast<Instruction*>(pc_));
-      dc64(rinfo.data());
-    }
-
-    num_pending_reloc_info_ = 0;
-    first_const_pool_use_ = -1;
-
-    RecordComment("]");
-
-    if (after_pool.is_linked()) {
-      bind(&after_pool);
-    }
-  }
+  Label size_check;
+  bind(&size_check);
+  constpool_.Emit(require_jump);
+  ASSERT(SizeOfCodeGeneratedSince(&size_check) <=
+         static_cast<unsigned>(worst_case_size));
 
   // Since a constant pool was just emitted, move the check offset forward by
   // the standard interval.
-  next_constant_pool_check_ = pc_offset() + kCheckConstPoolInterval;
-
-  ASSERT(SizeOfCodeGeneratedSince(&size_check) ==
-         static_cast<unsigned>(pool_size));
+  SetNextConstPoolCheckIn(kCheckConstPoolInterval);
 }
 
 
@@ -2817,31 +3088,12 @@ void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
 }
 
 
-void PatchingAssembler::MovInt64(const Register& rd, int64_t imm) {
-  Label start;
-  bind(&start);
-
-  ASSERT(rd.Is64Bits());
-  ASSERT(!rd.IsSP());
-
-  for (unsigned i = 0; i < (rd.SizeInBits() / 16); i++) {
-    uint64_t imm16 = (imm >> (16 * i)) & 0xffffL;
-    movk(rd, imm16, 16 * i);
-  }
-
-  ASSERT(SizeOfCodeGeneratedSince(&start) ==
-         kMovInt64NInstrs * kInstructionSize);
-}
-
-
-void PatchingAssembler::PatchAdrFar(Instruction* target) {
+void PatchingAssembler::PatchAdrFar(ptrdiff_t target_offset) {
   // The code at the current instruction should be:
   //   adr  rd, 0
   //   nop  (adr_far)
   //   nop  (adr_far)
-  //   nop  (adr_far)
   //   movz scratch, 0
-  //   add  rd, rd, scratch
 
   // Verify the expected code.
   Instruction* expected_adr = InstructionAt(0);
@@ -2851,39 +3103,21 @@ void PatchingAssembler::PatchAdrFar(Instruction* target) {
     CHECK(InstructionAt((i + 1) * kInstructionSize)->IsNop(ADR_FAR_NOP));
   }
   Instruction* expected_movz =
-      InstructionAt((kAdrFarPatchableNInstrs - 2) * kInstructionSize);
+      InstructionAt((kAdrFarPatchableNInstrs - 1) * kInstructionSize);
   CHECK(expected_movz->IsMovz() &&
         (expected_movz->ImmMoveWide() == 0) &&
         (expected_movz->ShiftMoveWide() == 0));
   int scratch_code = expected_movz->Rd();
-  Instruction* expected_add =
-      InstructionAt((kAdrFarPatchableNInstrs - 1) * kInstructionSize);
-  CHECK(expected_add->IsAddSubShifted() &&
-        (expected_add->Mask(AddSubOpMask) == ADD) &&
-        expected_add->SixtyFourBits() &&
-        (expected_add->Rd() == rd_code) && (expected_add->Rn() == rd_code) &&
-        (expected_add->Rm() == scratch_code) &&
-        (static_cast<Shift>(expected_add->ShiftDP()) == LSL) &&
-        (expected_add->ImmDPShift() == 0));
 
   // Patch to load the correct address.
-  Label start;
-  bind(&start);
   Register rd = Register::XRegFromCode(rd_code);
-  // If the target is in range, we only patch the adr. Otherwise we patch the
-  // nops with fixup instructions.
-  int target_offset = expected_adr->DistanceTo(target);
-  if (Instruction::IsValidPCRelOffset(target_offset)) {
-    adr(rd, target_offset);
-    for (int i = 0; i < kAdrFarPatchableNInstrs - 2; ++i) {
-      nop(ADR_FAR_NOP);
-    }
-  } else {
-    Register scratch = Register::XRegFromCode(scratch_code);
-    adr(rd, 0);
-    MovInt64(scratch, target_offset);
-    add(rd, rd, scratch);
-  }
+  Register scratch = Register::XRegFromCode(scratch_code);
+  // Addresses are only 48 bits.
+  adr(rd, target_offset & 0xFFFF);
+  movz(scratch, (target_offset >> 16) & 0xFFFF, 16);
+  movk(scratch, (target_offset >> 32) & 0xFFFF, 32);
+  ASSERT((target_offset >> 48) == 0);
+  add(rd, rd, scratch);
 }
 
 

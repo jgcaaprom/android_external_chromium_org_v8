@@ -12,7 +12,7 @@
 namespace v8 {
 namespace internal {
 
-class ScriptData;
+class AstValueFactory;
 class HydrogenCodeStub;
 
 // ParseRestriction is used to restrict the set of valid statements in a
@@ -22,17 +22,41 @@ enum ParseRestriction {
   ONLY_SINGLE_FUNCTION_LITERAL  // Only a single FunctionLiteral expression.
 };
 
-enum CachedDataMode {
-  NO_CACHED_DATA,
-  CONSUME_CACHED_DATA,
-  PRODUCE_CACHED_DATA
-};
-
 struct OffsetRange {
   OffsetRange(int from, int to) : from(from), to(to) {}
   int from;
   int to;
 };
+
+
+class ScriptData {
+ public:
+  ScriptData(const byte* data, int length);
+  ~ScriptData() {
+    if (owns_data_) DeleteArray(data_);
+  }
+
+  const byte* data() const { return data_; }
+  int length() const { return length_; }
+
+  void AcquireDataOwnership() {
+    ASSERT(!owns_data_);
+    owns_data_ = true;
+  }
+
+  void ReleaseDataOwnership() {
+    ASSERT(owns_data_);
+    owns_data_ = false;
+  }
+
+ private:
+  bool owns_data_;
+  const byte* data_;
+  int length_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScriptData);
+};
+
 
 // CompilationInfo encapsulates some information known at compile time.  It
 // is constructed based on the resources available at compile-time.
@@ -60,8 +84,8 @@ class CompilationInfo {
   HydrogenCodeStub* code_stub() const {return code_stub_; }
   v8::Extension* extension() const { return extension_; }
   ScriptData** cached_data() const { return cached_data_; }
-  CachedDataMode cached_data_mode() const {
-    return cached_data_mode_;
+  ScriptCompiler::CompileOptions compile_options() const {
+    return compile_options_;
   }
   Handle<Context> context() const { return context_; }
   BailoutId osr_ast_id() const { return osr_ast_id_; }
@@ -75,10 +99,12 @@ class CompilationInfo {
     ASSERT(!is_lazy());
     flags_ |= IsEval::encode(true);
   }
+
   void MarkAsGlobal() {
     ASSERT(!is_lazy());
     flags_ |= IsGlobal::encode(true);
   }
+
   void set_parameter_count(int parameter_count) {
     ASSERT(IsStub());
     parameter_count_ = parameter_count;
@@ -87,13 +113,16 @@ class CompilationInfo {
   void set_this_has_uses(bool has_no_uses) {
     this_has_uses_ = has_no_uses;
   }
+
   bool this_has_uses() {
     return this_has_uses_;
   }
+
   void SetStrictMode(StrictMode strict_mode) {
     ASSERT(this->strict_mode() == SLOPPY || this->strict_mode() == strict_mode);
     flags_ = StrictModeField::update(flags_, strict_mode);
   }
+
   void MarkAsNative() {
     flags_ |= IsNative::encode(true);
   }
@@ -154,8 +183,16 @@ class CompilationInfo {
     return IsDebug::decode(flags_);
   }
 
+  void PrepareForSerializing() {
+    ASSERT(!is_lazy());
+    flags_ |= PrepareForSerializing::encode(true);
+  }
+
+  bool will_serialize() const { return PrepareForSerializing::decode(flags_); }
+
   bool IsCodePreAgingActive() const {
-    return FLAG_optimize_for_size && FLAG_age_code && !is_debug();
+    return FLAG_optimize_for_size && FLAG_age_code && !will_serialize() &&
+           !is_debug();
   }
 
   void SetParseRestriction(ParseRestriction restriction) {
@@ -184,9 +221,9 @@ class CompilationInfo {
     extension_ = extension;
   }
   void SetCachedData(ScriptData** cached_data,
-                     CachedDataMode cached_data_mode) {
-    cached_data_mode_ = cached_data_mode;
-    if (cached_data_mode == NO_CACHED_DATA) {
+                     ScriptCompiler::CompileOptions compile_options) {
+    compile_options_ = compile_options;
+    if (compile_options == ScriptCompiler::kNoCompileOptions) {
       cached_data_ = NULL;
     } else {
       ASSERT(!is_lazy());
@@ -321,6 +358,13 @@ class CompilationInfo {
 
   int optimization_id() const { return optimization_id_; }
 
+  AstValueFactory* ast_value_factory() const { return ast_value_factory_; }
+  void SetAstValueFactory(AstValueFactory* ast_value_factory,
+                          bool owned = true) {
+    ast_value_factory_ = ast_value_factory;
+    ast_value_factory_owned_ = owned;
+  }
+
  protected:
   CompilationInfo(Handle<Script> script,
                   Zone* zone);
@@ -385,6 +429,8 @@ class CompilationInfo {
   class RequiresFrame: public BitField<bool, 13, 1> {};
   // If the function cannot build a frame (for unspecified reasons)
   class MustNotHaveEagerFrame: public BitField<bool, 14, 1> {};
+  // If we plan to serialize the compiled code.
+  class PrepareForSerializing : public BitField<bool, 15, 1> {};
 
   unsigned flags_;
 
@@ -409,7 +455,7 @@ class CompilationInfo {
   // Fields possibly needed for eager compilation, NULL by default.
   v8::Extension* extension_;
   ScriptData** cached_data_;
-  CachedDataMode cached_data_mode_;
+  ScriptCompiler::CompileOptions compile_options_;
 
   // The context of the caller for eval code, and the global context for a
   // global script. Will be a null handle otherwise.
@@ -463,6 +509,9 @@ class CompilationInfo {
   Handle<Foreign> object_wrapper_;
 
   int optimization_id_;
+
+  AstValueFactory* ast_value_factory_;
+  bool ast_value_factory_owned_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };
@@ -573,9 +622,9 @@ class OptimizedCompileJob: public ZoneObject {
   HOptimizedGraphBuilder* graph_builder_;
   HGraph* graph_;
   LChunk* chunk_;
-  TimeDelta time_taken_to_create_graph_;
-  TimeDelta time_taken_to_optimize_;
-  TimeDelta time_taken_to_codegen_;
+  base::TimeDelta time_taken_to_create_graph_;
+  base::TimeDelta time_taken_to_optimize_;
+  base::TimeDelta time_taken_to_codegen_;
   Status last_status_;
   bool awaiting_install_;
 
@@ -586,7 +635,7 @@ class OptimizedCompileJob: public ZoneObject {
   void RecordOptimizationStats();
 
   struct Timer {
-    Timer(OptimizedCompileJob* job, TimeDelta* location)
+    Timer(OptimizedCompileJob* job, base::TimeDelta* location)
         : job_(job), location_(location) {
       ASSERT(location_ != NULL);
       timer_.Start();
@@ -597,8 +646,8 @@ class OptimizedCompileJob: public ZoneObject {
     }
 
     OptimizedCompileJob* job_;
-    ElapsedTimer timer_;
-    TimeDelta* location_;
+    base::ElapsedTimer timer_;
+    base::TimeDelta* location_;
   };
 };
 
@@ -637,15 +686,10 @@ class Compiler : public AllStatic {
 
   // Compile a String source within a context.
   static Handle<SharedFunctionInfo> CompileScript(
-      Handle<String> source,
-      Handle<Object> script_name,
-      int line_offset,
-      int column_offset,
-      bool is_shared_cross_origin,
-      Handle<Context> context,
-      v8::Extension* extension,
-      ScriptData** cached_data,
-      CachedDataMode cached_data_mode,
+      Handle<String> source, Handle<Object> script_name, int line_offset,
+      int column_offset, bool is_shared_cross_origin, Handle<Context> context,
+      v8::Extension* extension, ScriptData** cached_data,
+      ScriptCompiler::CompileOptions compile_options,
       NativesFlag is_natives_code);
 
   // Create a shared function info object (the code may be lazily compiled).
@@ -691,11 +735,10 @@ class CompilationPhase BASE_EMBEDDED {
   CompilationInfo* info_;
   Zone zone_;
   unsigned info_zone_start_allocation_size_;
-  ElapsedTimer timer_;
+  base::ElapsedTimer timer_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationPhase);
 };
-
 
 } }  // namespace v8::internal
 
