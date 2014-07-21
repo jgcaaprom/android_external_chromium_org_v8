@@ -283,7 +283,8 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   ASSERT(name.is(a2));
 
   // Probe the stub cache.
-  Code::Flags flags = Code::ComputeHandlerFlags(Code::LOAD_IC);
+  Code::Flags flags = Code::RemoveTypeAndHolderFromFlags(
+      Code::ComputeHandlerFlags(Code::LOAD_IC));
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, receiver, name, a3, a4, a5, a6);
 
@@ -444,7 +445,7 @@ void KeyedLoadIC::GenerateSloppyArguments(MacroAssembler* masm) {
   __ bind(&notin);
   // The unmapped lookup expects that the parameter map is in a2.
   MemOperand unmapped_location =
-      GenerateUnmappedArgumentsLookup(masm, a0, a0, a3, &slow);
+      GenerateUnmappedArgumentsLookup(masm, key, a0, a3, &slow);
   __ ld(a0, unmapped_location);
   __ LoadRoot(a3, Heap::kTheHoleValueRootIndex);
   __ Branch(&slow, eq, a0, Operand(a3));
@@ -1114,7 +1115,8 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
   ASSERT(ValueRegister().is(a0));
 
   // Get the receiver from the stack and probe the stub cache.
-  Code::Flags flags = Code::ComputeHandlerFlags(Code::STORE_IC);
+  Code::Flags flags = Code::RemoveTypeAndHolderFromFlags(
+      Code::ComputeHandlerFlags(Code::STORE_IC));
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, receiver, name, a3, a4, a5, a6);
 
