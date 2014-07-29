@@ -238,6 +238,7 @@ namespace internal {
   F(GetArrayKeys, 2, 1)                                \
   F(MoveArrayContents, 2, 1)                           \
   F(EstimateNumberOfElements, 1, 1)                    \
+  F(NormalizeElements, 1, 1)                           \
                                                        \
   /* Getters and Setters */                            \
   F(LookupAccessor, 3, 1)                              \
@@ -298,6 +299,7 @@ namespace internal {
   F(WeakCollectionSet, 3, 1)                           \
                                                        \
   F(GetWeakMapEntries, 1, 1)                           \
+  F(GetWeakSetValues, 1, 1)                            \
                                                        \
   /* Harmony events */                                 \
   F(EnqueueMicrotask, 1, 1)                            \

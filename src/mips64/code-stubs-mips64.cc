@@ -1133,11 +1133,7 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
 void StoreRegistersStateStub::Generate(MacroAssembler* masm) {
   __ mov(t9, ra);
   __ pop(ra);
-  if (save_doubles_ == kSaveFPRegs) {
-    __ PushSafepointRegistersAndDoubles();
-  } else {
-    __ PushSafepointRegisters();
-  }
+  __ PushSafepointRegisters();
   __ Jump(t9);
 }
 
@@ -1145,11 +1141,7 @@ void StoreRegistersStateStub::Generate(MacroAssembler* masm) {
 void RestoreRegistersStateStub::Generate(MacroAssembler* masm) {
   __ mov(t9, ra);
   __ pop(ra);
-  if (save_doubles_ == kSaveFPRegs) {
-    __ PopSafepointRegistersAndDoubles();
-  } else {
-    __ PopSafepointRegisters();
-  }
+  __ PopSafepointRegisters();
   __ Jump(t9);
 }
 
@@ -1415,23 +1407,15 @@ void CodeStub::GenerateStubsAheadOfTime(Isolate* isolate) {
 }
 
 
-void StoreRegistersStateStub::GenerateAheadOfTime(
-    Isolate* isolate) {
-  StoreRegistersStateStub stub1(isolate, kDontSaveFPRegs);
-  stub1.GetCode();
-  // Hydrogen code stubs need stub2 at snapshot time.
-  StoreRegistersStateStub stub2(isolate, kSaveFPRegs);
-  stub2.GetCode();
+void StoreRegistersStateStub::GenerateAheadOfTime(Isolate* isolate) {
+  StoreRegistersStateStub stub(isolate);
+  stub.GetCode();
 }
 
 
-void RestoreRegistersStateStub::GenerateAheadOfTime(
-    Isolate* isolate) {
-  RestoreRegistersStateStub stub1(isolate, kDontSaveFPRegs);
-  stub1.GetCode();
-  // Hydrogen code stubs need stub2 at snapshot time.
-  RestoreRegistersStateStub stub2(isolate, kSaveFPRegs);
-  stub2.GetCode();
+void RestoreRegistersStateStub::GenerateAheadOfTime(Isolate* isolate) {
+  RestoreRegistersStateStub stub(isolate);
+  stub.GetCode();
 }
 
 
@@ -1954,20 +1938,11 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
 void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
   Label miss;
   Register receiver = LoadIC::ReceiverRegister();
-  Register name = LoadIC::NameRegister();
-
-  ASSERT(kind() == Code::LOAD_IC ||
-         kind() == Code::KEYED_LOAD_IC);
-
-  if (kind() == Code::KEYED_LOAD_IC) {
-    __ Branch(&miss, ne, name,
-        Operand(isolate()->factory()->prototype_string()));
-  }
-
-  StubCompiler::GenerateLoadFunctionPrototype(masm, receiver, a3, a4, &miss);
+  NamedLoadHandlerCompiler::GenerateLoadFunctionPrototype(masm, receiver, a3,
+                                                          a4, &miss);
   __ bind(&miss);
-  StubCompiler::TailCallBuiltin(
-      masm, BaseLoadStoreStubCompiler::MissBuiltin(kind()));
+  PropertyAccessCompiler::TailCallBuiltin(
+      masm, PropertyAccessCompiler::MissBuiltin(Code::LOAD_IC));
 }
 
 

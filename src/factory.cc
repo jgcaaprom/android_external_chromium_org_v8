@@ -1796,8 +1796,8 @@ void Factory::ReinitializeJSReceiver(Handle<JSReceiver> object,
 
   // Put in filler if the new object is smaller than the old.
   if (size_difference > 0) {
-    Address address = object->address() + map->instance_size();
-    heap->CreateFillerObjectAt(address, size_difference);
+    Address address = object->address();
+    heap->CreateFillerObjectAt(address + map->instance_size(), size_difference);
     heap->AdjustLiveBytes(address, -size_difference, Heap::FROM_MUTATOR);
   }
 
@@ -2084,9 +2084,9 @@ Handle<JSObject> Factory::NewArgumentsObject(Handle<JSFunction> callee,
   ASSERT(!isolate()->has_pending_exception());
   Handle<JSObject> result = NewJSObjectFromMap(map);
   Handle<Smi> value(Smi::FromInt(length), isolate());
-  JSReceiver::SetProperty(result, length_string(), value, STRICT).Assert();
+  Object::SetProperty(result, length_string(), value, STRICT).Assert();
   if (!strict_mode_callee) {
-    JSReceiver::SetProperty(result, callee_string(), callee, STRICT).Assert();
+    Object::SetProperty(result, callee_string(), callee, STRICT).Assert();
   }
   return result;
 }

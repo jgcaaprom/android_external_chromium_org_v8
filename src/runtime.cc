@@ -1798,6 +1798,28 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionSet) {
 }
 
 
+RUNTIME_FUNCTION(Runtime_GetWeakSetValues) {
+  HandleScope scope(isolate);
+  ASSERT(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSWeakCollection, holder, 0);
+  Handle<ObjectHashTable> table(ObjectHashTable::cast(holder->table()));
+  Handle<FixedArray> values =
+      isolate->factory()->NewFixedArray(table->NumberOfElements());
+  {
+    DisallowHeapAllocation no_gc;
+    int number_of_non_hole_elements = 0;
+    for (int i = 0; i < table->Capacity(); i++) {
+      Handle<Object> key(table->KeyAt(i), isolate);
+      if (table->IsKey(*key)) {
+        values->set(number_of_non_hole_elements++, *key);
+      }
+    }
+    ASSERT_EQ(table->NumberOfElements(), number_of_non_hole_elements);
+  }
+  return *isolate->factory()->NewJSArrayWithElements(values);
+}
+
+
 RUNTIME_FUNCTION(Runtime_ClassOf) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
@@ -1924,11 +1946,11 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
   // LookupIterator.
   if (name->AsArrayIndex(&index)) {
     // Get attributes.
-    attrs = JSReceiver::GetOwnElementAttribute(obj, index);
-    if (attrs == ABSENT) {
-      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
-      return factory->undefined_value();
-    }
+    Maybe<PropertyAttributes> maybe =
+        JSReceiver::GetOwnElementAttribute(obj, index);
+    if (!maybe.has_value) return MaybeHandle<Object>();
+    attrs = maybe.value;
+    if (attrs == ABSENT) return factory->undefined_value();
 
     // Get AccessorPair if present.
     maybe_accessors = JSObject::GetOwnElementAccessorPair(obj, index);
@@ -1941,11 +1963,10 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
   } else {
     // Get attributes.
     LookupIterator it(obj, name, LookupIterator::CHECK_OWN);
-    attrs = JSObject::GetPropertyAttributes(&it);
-    if (attrs == ABSENT) {
-      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
-      return factory->undefined_value();
-    }
+    Maybe<PropertyAttributes> maybe = JSObject::GetPropertyAttributes(&it);
+    if (!maybe.has_value) return MaybeHandle<Object>();
+    attrs = maybe.value;
+    if (attrs == ABSENT) return factory->undefined_value();
 
     // Get AccessorPair if present.
     if (it.state() == LookupIterator::PROPERTY &&
@@ -1960,7 +1981,7 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
           isolate, value, Object::GetProperty(&it), Object);
     }
   }
-  ASSERT(!isolate->has_scheduled_exception());
+  ASSERT(!isolate->has_pending_exception());
   Handle<FixedArray> elms = factory->NewFixedArray(DESCRIPTOR_SIZE);
   elms->set(ENUMERABLE_INDEX, heap->ToBoolean((attrs & DONT_ENUM) == 0));
   elms->set(CONFIGURABLE_INDEX, heap->ToBoolean((attrs & DONT_DELETE) == 0));
@@ -2121,7 +2142,9 @@ static Object* DeclareGlobals(Isolate* isolate, Handle<GlobalObject> global,
                               bool is_const, bool is_function) {
   // Do the lookup own properties only, see ES5 erratum.
   LookupIterator it(global, name, LookupIterator::CHECK_HIDDEN);
-  PropertyAttributes old_attributes = JSReceiver::GetPropertyAttributes(&it);
+  Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
+  ASSERT(maybe.has_value);
+  PropertyAttributes old_attributes = maybe.value;
 
   if (old_attributes != ABSENT) {
     // The name was declared before; check for conflicting re-declarations.
@@ -2231,8 +2254,7 @@ RUNTIME_FUNCTION(Runtime_InitializeVarGlobal) {
   Handle<GlobalObject> global(isolate->context()->global_object());
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      JSReceiver::SetProperty(global, name, value, strict_mode));
+      isolate, result, Object::SetProperty(global, name, value, strict_mode));
   return *result;
 }
 
@@ -2250,7 +2272,9 @@ RUNTIME_FUNCTION(Runtime_InitializeConstGlobal) {
 
   // Lookup the property as own on the global object.
   LookupIterator it(global, name, LookupIterator::CHECK_HIDDEN);
-  PropertyAttributes old_attributes = JSReceiver::GetPropertyAttributes(&it);
+  Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
+  ASSERT(maybe.has_value);
+  PropertyAttributes old_attributes = maybe.value;
 
   PropertyAttributes attr =
       static_cast<PropertyAttributes>(DONT_DELETE | READ_ONLY);
@@ -2398,7 +2422,9 @@ RUNTIME_FUNCTION(Runtime_InitializeLegacyConstLookupSlot) {
     ASSERT(holder->IsJSGlobalObject() || holder->IsJSContextExtensionObject());
 
     LookupIterator it(holder, name, LookupIterator::CHECK_HIDDEN);
-    PropertyAttributes old_attributes = JSReceiver::GetPropertyAttributes(&it);
+    Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
+    if (!maybe.has_value) return isolate->heap()->exception();
+    PropertyAttributes old_attributes = maybe.value;
 
     // Ignore if we can't reconfigure the value.
     if ((old_attributes & DONT_DELETE) != 0) {
@@ -4726,17 +4752,21 @@ static MaybeHandle<Name> ToName(Isolate* isolate, Handle<Object> key) {
 MaybeHandle<Object> Runtime::HasObjectProperty(Isolate* isolate,
                                                Handle<JSReceiver> object,
                                                Handle<Object> key) {
+  Maybe<bool> maybe;
   // Check if the given key is an array index.
   uint32_t index;
   if (key->ToArrayIndex(&index)) {
-    return isolate->factory()->ToBoolean(JSReceiver::HasElement(object, index));
+    maybe = JSReceiver::HasElement(object, index);
+  } else {
+    // Convert the key to a name - possibly by calling back into JavaScript.
+    Handle<Name> name;
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, name, ToName(isolate, key), Object);
+
+    maybe = JSReceiver::HasProperty(object, name);
   }
 
-  // Convert the key to a name - possibly by calling back into JavaScript.
-  Handle<Name> name;
-  ASSIGN_RETURN_ON_EXCEPTION(isolate, name, ToName(isolate, key), Object);
-
-  return isolate->factory()->ToBoolean(JSReceiver::HasProperty(object, name));
+  if (!maybe.has_value) return MaybeHandle<Object>();
+  return isolate->factory()->ToBoolean(maybe.value);
 }
 
 
@@ -4918,9 +4948,8 @@ RUNTIME_FUNCTION(Runtime_DefineAccessorPropertyUnchecked) {
   PropertyAttributes attr = static_cast<PropertyAttributes>(unchecked);
 
   bool fast = obj->HasFastProperties();
-  // DefineAccessor checks access rights.
-  JSObject::DefineAccessor(obj, name, getter, setter, attr);
-  RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
+  RETURN_FAILURE_ON_EXCEPTION(
+      isolate, JSObject::DefineAccessor(obj, name, getter, setter, attr));
   if (fast) JSObject::MigrateSlowToFast(obj, 0);
   return isolate->heap()->undefined_value();
 }
@@ -5026,18 +5055,17 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
           isolate, name_object, Execution::ToString(isolate, key), Object);
     }
     Handle<Name> name = Handle<Name>::cast(name_object);
-    return JSReceiver::SetProperty(Handle<JSProxy>::cast(object), name, value,
-                                   strict_mode);
+    return Object::SetProperty(Handle<JSProxy>::cast(object), name, value,
+                               strict_mode);
   }
-
-  // If the object isn't a JavaScript object, we ignore the store.
-  if (!object->IsJSObject()) return value;
-
-  Handle<JSObject> js_object = Handle<JSObject>::cast(object);
 
   // Check if the given key is an array index.
   uint32_t index;
   if (key->ToArrayIndex(&index)) {
+    // TODO(verwaest): Support non-JSObject receivers.
+    if (!object->IsJSObject()) return value;
+    Handle<JSObject> js_object = Handle<JSObject>::cast(object);
+
     // In Firefox/SpiderMonkey, Safari and Opera you can access the characters
     // of a string using [] notation.  We need to support this too in
     // JavaScript.
@@ -5068,6 +5096,9 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
   if (key->IsName()) {
     Handle<Name> name = Handle<Name>::cast(key);
     if (name->AsArrayIndex(&index)) {
+      // TODO(verwaest): Support non-JSObject receivers.
+      if (!object->IsJSObject()) return value;
+      Handle<JSObject> js_object = Handle<JSObject>::cast(object);
       if (js_object->HasExternalArrayElements()) {
         if (!value->IsNumber() && !value->IsUndefined()) {
           ASSIGN_RETURN_ON_EXCEPTION(
@@ -5078,7 +5109,7 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
                                   true, SET_PROPERTY);
     } else {
       if (name->IsString()) name = String::Flatten(Handle<String>::cast(name));
-      return JSReceiver::SetProperty(js_object, name, value, strict_mode);
+      return Object::SetProperty(object, name, value, strict_mode);
     }
   }
 
@@ -5089,11 +5120,13 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
   Handle<String> name = Handle<String>::cast(converted);
 
   if (name->AsArrayIndex(&index)) {
+    // TODO(verwaest): Support non-JSObject receivers.
+    if (!object->IsJSObject()) return value;
+    Handle<JSObject> js_object = Handle<JSObject>::cast(object);
     return JSObject::SetElement(js_object, index, value, NONE, strict_mode,
                                 true, SET_PROPERTY);
-  } else {
-    return JSReceiver::SetProperty(js_object, name, value, strict_mode);
   }
+  return Object::SetProperty(object, name, value, strict_mode);
 }
 
 
@@ -5218,7 +5251,8 @@ RUNTIME_FUNCTION(Runtime_AddNamedProperty) {
   uint32_t index = 0;
   ASSERT(!key->ToArrayIndex(&index));
   LookupIterator it(object, key, LookupIterator::CHECK_OWN_REAL);
-  JSReceiver::GetPropertyAttributes(&it);
+  Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
+  ASSERT(maybe.has_value);
   RUNTIME_ASSERT(!it.IsFound());
 #endif
 
@@ -5249,12 +5283,15 @@ RUNTIME_FUNCTION(Runtime_AddPropertyForTemplate) {
   if (key->IsName()) {
     LookupIterator it(object, Handle<Name>::cast(key),
                       LookupIterator::CHECK_OWN_REAL);
-    JSReceiver::GetPropertyAttributes(&it);
+    Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
+    ASSERT(maybe.has_value);
     duplicate = it.IsFound();
   } else {
     uint32_t index = 0;
     RUNTIME_ASSERT(key->ToArrayIndex(&index));
-    duplicate = JSReceiver::HasOwnElement(object, index);
+    Maybe<bool> maybe = JSReceiver::HasOwnElement(object, index);
+    if (!maybe.has_value) return isolate->heap()->exception();
+    duplicate = maybe.value;
   }
   if (duplicate) {
     Handle<Object> args[1] = { key };
@@ -5476,9 +5513,9 @@ RUNTIME_FUNCTION(Runtime_DeleteProperty) {
 static Object* HasOwnPropertyImplementation(Isolate* isolate,
                                             Handle<JSObject> object,
                                             Handle<Name> key) {
-  if (JSReceiver::HasOwnProperty(object, key)) {
-    return isolate->heap()->true_value();
-  }
+  Maybe<bool> maybe = JSReceiver::HasOwnProperty(object, key);
+  if (!maybe.has_value) return isolate->heap()->exception();
+  if (maybe.value) return isolate->heap()->true_value();
   // Handle hidden prototypes.  If there's a hidden prototype above this thing
   // then we have to check it for properties, because they are supposed to
   // look like they are on this object.
@@ -5488,7 +5525,7 @@ static Object* HasOwnPropertyImplementation(Isolate* isolate,
           ->map()
           ->is_hidden_prototype()) {
     // TODO(verwaest): The recursion is not necessary for keys that are array
-    // indicies. Removing this.
+    // indices. Removing this.
     return HasOwnPropertyImplementation(
         isolate, Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)),
         key);
@@ -5513,11 +5550,11 @@ RUNTIME_FUNCTION(Runtime_HasOwnProperty) {
     // Fast case: either the key is a real named property or it is not
     // an array index and there are no interceptors or hidden
     // prototypes.
-    if (JSObject::HasRealNamedProperty(js_obj, key)) {
-      ASSERT(!isolate->has_scheduled_exception());
+    Maybe<bool> maybe = JSObject::HasRealNamedProperty(js_obj, key);
+    if (!maybe.has_value) return isolate->heap()->exception();
+    ASSERT(!isolate->has_pending_exception());
+    if (maybe.value) {
       return isolate->heap()->true_value();
-    } else {
-      RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
     }
     Map* map = js_obj->map();
     if (!key_is_array_index &&
@@ -5546,10 +5583,9 @@ RUNTIME_FUNCTION(Runtime_HasProperty) {
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
   CONVERT_ARG_HANDLE_CHECKED(Name, key, 1);
 
-  bool result = JSReceiver::HasProperty(receiver, key);
-  RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
-  if (isolate->has_pending_exception()) return isolate->heap()->exception();
-  return isolate->heap()->ToBoolean(result);
+  Maybe<bool> maybe = JSReceiver::HasProperty(receiver, key);
+  if (!maybe.has_value) return isolate->heap()->exception();
+  return isolate->heap()->ToBoolean(maybe.value);
 }
 
 
@@ -5559,9 +5595,9 @@ RUNTIME_FUNCTION(Runtime_HasElement) {
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
   CONVERT_SMI_ARG_CHECKED(index, 1);
 
-  bool result = JSReceiver::HasElement(receiver, index);
-  RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
-  return isolate->heap()->ToBoolean(result);
+  Maybe<bool> maybe = JSReceiver::HasElement(receiver, index);
+  if (!maybe.has_value) return isolate->heap()->exception();
+  return isolate->heap()->ToBoolean(maybe.value);
 }
 
 
@@ -5572,13 +5608,11 @@ RUNTIME_FUNCTION(Runtime_IsPropertyEnumerable) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Name, key, 1);
 
-  PropertyAttributes att = JSReceiver::GetOwnPropertyAttributes(object, key);
-  if (att == ABSENT || (att & DONT_ENUM) != 0) {
-    RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
-    return isolate->heap()->false_value();
-  }
-  ASSERT(!isolate->has_scheduled_exception());
-  return isolate->heap()->true_value();
+  Maybe<PropertyAttributes> maybe =
+      JSReceiver::GetOwnPropertyAttributes(object, key);
+  if (!maybe.has_value) return isolate->heap()->exception();
+  if (maybe.value == ABSENT) maybe.value = DONT_ENUM;
+  return isolate->heap()->ToBoolean((maybe.value & DONT_ENUM) == 0);
 }
 
 
@@ -9171,7 +9205,13 @@ static ObjectPair LoadLookupSlotHelper(Arguments args, Isolate* isolate,
   // property from it.
   if (!holder.is_null()) {
     Handle<JSReceiver> object = Handle<JSReceiver>::cast(holder);
-    ASSERT(object->IsJSProxy() || JSReceiver::HasProperty(object, name));
+#ifdef DEBUG
+    if (!object->IsJSProxy()) {
+      Maybe<bool> maybe = JSReceiver::HasProperty(object, name);
+      ASSERT(maybe.has_value);
+      ASSERT(maybe.value);
+    }
+#endif
     // GetProperty below can cause GC.
     Handle<Object> receiver_handle(
         object->IsGlobalObject()
@@ -9267,7 +9307,7 @@ RUNTIME_FUNCTION(Runtime_StoreLookupSlot) {
   }
 
   RETURN_FAILURE_ON_EXCEPTION(
-      isolate, JSReceiver::SetProperty(object, name, value, strict_mode));
+      isolate, Object::SetProperty(object, name, value, strict_mode));
 
   return *value;
 }
@@ -10158,14 +10198,17 @@ static bool IterateElements(Isolate* isolate,
         Handle<Object> element_value(elements->get(j), isolate);
         if (!element_value->IsTheHole()) {
           visitor->visit(j, element_value);
-        } else if (JSReceiver::HasElement(receiver, j)) {
-          // Call GetElement on receiver, not its prototype, or getters won't
-          // have the correct receiver.
-          ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-              isolate, element_value,
-              Object::GetElement(isolate, receiver, j),
-              false);
-          visitor->visit(j, element_value);
+        } else {
+          Maybe<bool> maybe = JSReceiver::HasElement(receiver, j);
+          if (!maybe.has_value) return false;
+          if (maybe.value) {
+            // Call GetElement on receiver, not its prototype, or getters won't
+            // have the correct receiver.
+            ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+                isolate, element_value,
+                Object::GetElement(isolate, receiver, j), false);
+            visitor->visit(j, element_value);
+          }
         }
       }
       break;
@@ -10191,15 +10234,18 @@ static bool IterateElements(Isolate* isolate,
           Handle<Object> element_value =
               isolate->factory()->NewNumber(double_value);
           visitor->visit(j, element_value);
-        } else if (JSReceiver::HasElement(receiver, j)) {
-          // Call GetElement on receiver, not its prototype, or getters won't
-          // have the correct receiver.
-          Handle<Object> element_value;
-          ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-              isolate, element_value,
-              Object::GetElement(isolate, receiver, j),
-              false);
-          visitor->visit(j, element_value);
+        } else {
+          Maybe<bool> maybe = JSReceiver::HasElement(receiver, j);
+          if (!maybe.has_value) return false;
+          if (maybe.value) {
+            // Call GetElement on receiver, not its prototype, or getters won't
+            // have the correct receiver.
+            Handle<Object> element_value;
+            ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+                isolate, element_value,
+                Object::GetElement(isolate, receiver, j), false);
+            visitor->visit(j, element_value);
+          }
         }
       }
       break;
@@ -10528,15 +10574,39 @@ RUNTIME_FUNCTION(Runtime_MoveArrayContents) {
 
 // How many elements does this object/array have?
 RUNTIME_FUNCTION(Runtime_EstimateNumberOfElements) {
-  SealHandleScope shs(isolate);
+  HandleScope scope(isolate);
   ASSERT(args.length() == 1);
-  CONVERT_ARG_CHECKED(JSArray, object, 0);
-  HeapObject* elements = object->elements();
+  CONVERT_ARG_HANDLE_CHECKED(JSArray, array, 0);
+  Handle<FixedArrayBase> elements(array->elements(), isolate);
+  SealHandleScope shs(isolate);
   if (elements->IsDictionary()) {
-    int result = SeededNumberDictionary::cast(elements)->NumberOfElements();
+    int result =
+        Handle<SeededNumberDictionary>::cast(elements)->NumberOfElements();
     return Smi::FromInt(result);
   } else {
-    return object->length();
+    ASSERT(array->length()->IsSmi());
+    // For packed elements, we know the exact number of elements
+    int length = elements->length();
+    ElementsKind kind = array->GetElementsKind();
+    if (IsFastPackedElementsKind(kind)) {
+      return Smi::FromInt(length);
+    }
+    // For holey elements, take samples from the buffer checking for holes
+    // to generate the estimate.
+    const int kNumberOfHoleCheckSamples = 97;
+    int increment = (length < kNumberOfHoleCheckSamples)
+                        ? 1
+                        : static_cast<int>(length / kNumberOfHoleCheckSamples);
+    ElementsAccessor* accessor = array->GetElementsAccessor();
+    int holes = 0;
+    for (int i = 0; i < length; i += increment) {
+      if (!accessor->HasElement(array, array, i, elements)) {
+        ++holes;
+      }
+    }
+    int estimate = static_cast<int>((kNumberOfHoleCheckSamples - holes) /
+                                    kNumberOfHoleCheckSamples * length);
+    return Smi::FromInt(estimate);
   }
 }
 
@@ -11514,7 +11584,9 @@ static bool SetLocalVariableValue(Isolate* isolate,
           !function_context->IsNativeContext()) {
         Handle<JSObject> ext(JSObject::cast(function_context->extension()));
 
-        if (JSReceiver::HasProperty(ext, variable_name)) {
+        Maybe<bool> maybe = JSReceiver::HasProperty(ext, variable_name);
+        ASSERT(maybe.has_value);
+        if (maybe.value) {
           // We don't expect this to do anything except replacing
           // property value.
           Runtime::SetObjectProperty(isolate, ext, variable_name, new_value,
@@ -11598,7 +11670,9 @@ static bool SetClosureVariableValue(Isolate* isolate,
   // be variables introduced by eval.
   if (context->has_extension()) {
     Handle<JSObject> ext(JSObject::cast(context->extension()));
-    if (JSReceiver::HasProperty(ext, variable_name)) {
+    Maybe<bool> maybe = JSReceiver::HasProperty(ext, variable_name);
+    ASSERT(maybe.has_value);
+    if (maybe.value) {
       // We don't expect this to do anything except replacing property value.
       Runtime::DefineObjectProperty(
           ext, variable_name, new_value, NONE).Assert();
@@ -12675,11 +12749,11 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeArgumentsObject(
     Handle<JSFunction> function) {
   // Do not materialize the arguments object for eval or top-level code.
   // Skip if "arguments" is already taken.
-  if (!function->shared()->is_function() ||
-      JSReceiver::HasOwnProperty(
-          target, isolate->factory()->arguments_string())) {
-    return target;
-  }
+  if (!function->shared()->is_function()) return target;
+  Maybe<bool> maybe = JSReceiver::HasOwnProperty(
+      target, isolate->factory()->arguments_string());
+  if (!maybe.has_value) return MaybeHandle<JSObject>();
+  if (maybe.value) return target;
 
   // FunctionGetArguments can't throw an exception.
   Handle<JSObject> arguments = Handle<JSObject>::cast(
@@ -14903,6 +14977,15 @@ RUNTIME_FUNCTION(Runtime_InternalArrayConstructor) {
                                 constructor,
                                 Handle<AllocationSite>::null(),
                                 caller_args);
+}
+
+
+RUNTIME_FUNCTION(Runtime_NormalizeElements) {
+  HandleScope scope(isolate);
+  ASSERT(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, array, 0);
+  JSObject::NormalizeElements(array);
+  return *array;
 }
 
 
