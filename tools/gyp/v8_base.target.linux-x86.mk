@@ -75,6 +75,7 @@ LOCAL_SRC_FILES := \
 	v8/src/frames.cc \
 	v8/src/full-codegen.cc \
 	v8/src/func-name-inferrer.cc \
+	v8/src/gc-tracer.cc \
 	v8/src/gdb-jit.cc \
 	v8/src/global-handles.cc \
 	v8/src/handles.cc \
@@ -245,7 +246,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -283,8 +283,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/v8 \
 	$(gyp_shared_intermediate_dir) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -362,7 +362,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -395,8 +394,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/v8 \
 	$(gyp_shared_intermediate_dir) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
