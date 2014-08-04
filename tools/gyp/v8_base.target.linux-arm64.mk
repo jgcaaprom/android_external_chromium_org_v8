@@ -46,6 +46,36 @@ LOCAL_SRC_FILES := \
 	v8/src/code-stubs-hydrogen.cc \
 	v8/src/codegen.cc \
 	v8/src/compilation-cache.cc \
+	v8/src/compiler/ast-graph-builder.cc \
+	v8/src/compiler/code-generator.cc \
+	v8/src/compiler/control-builders.cc \
+	v8/src/compiler/gap-resolver.cc \
+	v8/src/compiler/graph-builder.cc \
+	v8/src/compiler/graph-reducer.cc \
+	v8/src/compiler/graph-replay.cc \
+	v8/src/compiler/graph-visualizer.cc \
+	v8/src/compiler/graph.cc \
+	v8/src/compiler/instruction-selector.cc \
+	v8/src/compiler/instruction.cc \
+	v8/src/compiler/js-context-specialization.cc \
+	v8/src/compiler/js-generic-lowering.cc \
+	v8/src/compiler/js-graph.cc \
+	v8/src/compiler/js-typed-lowering.cc \
+	v8/src/compiler/linkage.cc \
+	v8/src/compiler/lowering-builder.cc \
+	v8/src/compiler/machine-operator-reducer.cc \
+	v8/src/compiler/node-cache.cc \
+	v8/src/compiler/node.cc \
+	v8/src/compiler/pipeline.cc \
+	v8/src/compiler/raw-machine-assembler.cc \
+	v8/src/compiler/register-allocator.cc \
+	v8/src/compiler/schedule.cc \
+	v8/src/compiler/scheduler.cc \
+	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/source-position.cc \
+	v8/src/compiler/structured-machine-assembler.cc \
+	v8/src/compiler/typer.cc \
+	v8/src/compiler/verifier.cc \
 	v8/src/compiler.cc \
 	v8/src/contexts.cc \
 	v8/src/conversions.cc \
@@ -193,7 +223,10 @@ LOCAL_SRC_FILES := \
 	v8/src/arm64/regexp-macro-assembler-arm64.cc \
 	v8/src/arm64/simulator-arm64.cc \
 	v8/src/arm64/stub-cache-arm64.cc \
-	v8/src/arm64/utils-arm64.cc
+	v8/src/arm64/utils-arm64.cc \
+	v8/src/compiler/arm64/code-generator-arm64.cc \
+	v8/src/compiler/arm64/instruction-selector-arm64.cc \
+	v8/src/compiler/arm64/linkage-arm64.cc
 
 
 # Flags passed to both C and C++ files.
