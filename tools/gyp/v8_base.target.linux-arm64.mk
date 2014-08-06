@@ -105,13 +105,17 @@ LOCAL_SRC_FILES := \
 	v8/src/frames.cc \
 	v8/src/full-codegen.cc \
 	v8/src/func-name-inferrer.cc \
-	v8/src/gc-tracer.cc \
 	v8/src/gdb-jit.cc \
 	v8/src/global-handles.cc \
 	v8/src/handles.cc \
 	v8/src/heap-profiler.cc \
 	v8/src/heap-snapshot-generator.cc \
-	v8/src/heap.cc \
+	v8/src/heap/gc-tracer.cc \
+	v8/src/heap/heap.cc \
+	v8/src/heap/incremental-marking.cc \
+	v8/src/heap/mark-compact.cc \
+	v8/src/heap/spaces.cc \
+	v8/src/heap/sweeper-thread.cc \
 	v8/src/hydrogen-bce.cc \
 	v8/src/hydrogen-bch.cc \
 	v8/src/hydrogen-canonicalize.cc \
@@ -140,7 +144,6 @@ LOCAL_SRC_FILES := \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
 	v8/src/ic.cc \
-	v8/src/incremental-marking.cc \
 	v8/src/interface.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
@@ -152,7 +155,6 @@ LOCAL_SRC_FILES := \
 	v8/src/log-utils.cc \
 	v8/src/log.cc \
 	v8/src/lookup.cc \
-	v8/src/mark-compact.cc \
 	v8/src/messages.cc \
 	v8/src/objects-debug.cc \
 	v8/src/objects-printer.cc \
@@ -182,13 +184,11 @@ LOCAL_SRC_FILES := \
 	v8/src/scopes.cc \
 	v8/src/serialize.cc \
 	v8/src/snapshot-source-sink.cc \
-	v8/src/spaces.cc \
 	v8/src/store-buffer.cc \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
 	v8/src/stub-cache.cc \
-	v8/src/sweeper-thread.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
 	v8/src/type-info.cc \
