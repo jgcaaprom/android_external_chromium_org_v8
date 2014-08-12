@@ -115,6 +115,7 @@ LOCAL_SRC_FILES := \
 	v8/src/heap/mark-compact.cc \
 	v8/src/heap/objects-visiting.cc \
 	v8/src/heap/spaces.cc \
+	v8/src/heap/store-buffer.cc \
 	v8/src/heap/sweeper-thread.cc \
 	v8/src/hydrogen-bce.cc \
 	v8/src/hydrogen-bch.cc \
@@ -183,7 +184,6 @@ LOCAL_SRC_FILES := \
 	v8/src/scopes.cc \
 	v8/src/serialize.cc \
 	v8/src/snapshot-source-sink.cc \
-	v8/src/store-buffer.cc \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
