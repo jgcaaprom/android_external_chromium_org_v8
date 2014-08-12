@@ -1180,7 +1180,6 @@ function GetOwnEnumerablePropertyNames(object) {
     }
   }
 
-  // FLAG_harmony_symbols may be on, but symbols aren't included by for-in.
   var filter = PROPERTY_ATTRIBUTES_STRING | PROPERTY_ATTRIBUTES_PRIVATE_SYMBOL;
   var symbols = %GetOwnPropertyNames(object, filter);
   for (var i = 0; i < symbols.length; ++i) {
@@ -1322,7 +1321,9 @@ function ObjectIsSealed(obj) {
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
     var desc = GetOwnPropertyJS(obj, name);
-    if (desc.isConfigurable()) return false;
+    if (desc.isConfigurable()) {
+      return false;
+    }
   }
   return true;
 }
@@ -1744,6 +1745,10 @@ function FunctionSourceString(func) {
     } else {
       return 'function () { [native code] }';
     }
+  }
+
+  if (%FunctionIsArrow(func)) {
+    return source;
   }
 
   var name = %FunctionNameShouldPrintAsAnonymous(func)

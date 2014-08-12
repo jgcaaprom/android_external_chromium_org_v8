@@ -47,7 +47,7 @@ class FunctionEntry BASE_EMBEDDED {
   int literal_count() { return backing_[kLiteralCountIndex]; }
   int property_count() { return backing_[kPropertyCountIndex]; }
   StrictMode strict_mode() {
-    ASSERT(backing_[kStrictModeIndex] == SLOPPY ||
+    DCHECK(backing_[kStrictModeIndex] == SLOPPY ||
            backing_[kStrictModeIndex] == STRICT);
     return static_cast<StrictMode>(backing_[kStrictModeIndex]);
   }
@@ -120,12 +120,12 @@ class BufferedZoneList {
   }
 
   T* last() {
-    ASSERT(last_ != NULL);
+    DCHECK(last_ != NULL);
     return last_;
   }
 
   T* RemoveLast() {
-    ASSERT(last_ != NULL);
+    DCHECK(last_ != NULL);
     T* result = last_;
     if ((list_ != NULL) && (list_->length() > 0))
       last_ = list_->RemoveLast();
@@ -135,13 +135,13 @@ class BufferedZoneList {
   }
 
   T* Get(int i) {
-    ASSERT((0 <= i) && (i < length()));
+    DCHECK((0 <= i) && (i < length()));
     if (list_ == NULL) {
-      ASSERT_EQ(0, i);
+      DCHECK_EQ(0, i);
       return last_;
     } else {
       if (i == list_->length()) {
-        ASSERT(last_ != NULL);
+        DCHECK(last_ != NULL);
         return last_;
       } else {
         return list_->at(i);
@@ -400,7 +400,7 @@ class ParserTraits {
   static bool IsIdentifier(Expression* expression);
 
   static const AstRawString* AsIdentifier(Expression* expression) {
-    ASSERT(IsIdentifier(expression));
+    DCHECK(IsIdentifier(expression));
     return expression->AsVariableProxy()->raw_name();
   }
 
@@ -418,6 +418,10 @@ class ParserTraits {
     fni->PushLiteralName(id);
   }
   void PushPropertyName(FuncNameInferrer* fni, Expression* expression);
+  static void InferFunctionName(FuncNameInferrer* fni,
+                                FunctionLiteral* func_to_infer) {
+    fni->AddFunction(func_to_infer);
+  }
 
   static void CheckFunctionLiteralInsideTopLevelObjectLiteral(
       Scope* scope, Expression* value, bool* has_function) {
@@ -528,7 +532,8 @@ class ParserTraits {
   const AstRawString* GetNextSymbol(Scanner* scanner);
 
   Expression* ThisExpression(Scope* scope,
-                             AstNodeFactory<AstConstructionVisitor>* factory);
+                             AstNodeFactory<AstConstructionVisitor>* factory,
+                             int pos = RelocInfo::kNoPosition);
   Literal* ExpressionFromLiteral(
       Token::Value token, int pos, Scanner* scanner,
       AstNodeFactory<AstConstructionVisitor>* factory);
@@ -538,6 +543,8 @@ class ParserTraits {
   Expression* ExpressionFromString(
       int pos, Scanner* scanner,
       AstNodeFactory<AstConstructionVisitor>* factory);
+  Expression* GetIterator(Expression* iterable,
+                          AstNodeFactory<AstConstructionVisitor>* factory);
   ZoneList<v8::internal::Expression*>* NewExpressionList(int size, Zone* zone) {
     return new(zone) ZoneList<v8::internal::Expression*>(size, zone);
   }

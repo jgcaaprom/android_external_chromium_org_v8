@@ -45,6 +45,36 @@ LOCAL_SRC_FILES := \
 	v8/src/code-stubs-hydrogen.cc \
 	v8/src/codegen.cc \
 	v8/src/compilation-cache.cc \
+	v8/src/compiler/ast-graph-builder.cc \
+	v8/src/compiler/code-generator.cc \
+	v8/src/compiler/control-builders.cc \
+	v8/src/compiler/gap-resolver.cc \
+	v8/src/compiler/graph-builder.cc \
+	v8/src/compiler/graph-reducer.cc \
+	v8/src/compiler/graph-replay.cc \
+	v8/src/compiler/graph-visualizer.cc \
+	v8/src/compiler/graph.cc \
+	v8/src/compiler/instruction-selector.cc \
+	v8/src/compiler/instruction.cc \
+	v8/src/compiler/js-context-specialization.cc \
+	v8/src/compiler/js-generic-lowering.cc \
+	v8/src/compiler/js-graph.cc \
+	v8/src/compiler/js-typed-lowering.cc \
+	v8/src/compiler/linkage.cc \
+	v8/src/compiler/lowering-builder.cc \
+	v8/src/compiler/machine-operator-reducer.cc \
+	v8/src/compiler/node-cache.cc \
+	v8/src/compiler/node.cc \
+	v8/src/compiler/pipeline.cc \
+	v8/src/compiler/raw-machine-assembler.cc \
+	v8/src/compiler/register-allocator.cc \
+	v8/src/compiler/schedule.cc \
+	v8/src/compiler/scheduler.cc \
+	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/source-position.cc \
+	v8/src/compiler/structured-machine-assembler.cc \
+	v8/src/compiler/typer.cc \
+	v8/src/compiler/verifier.cc \
 	v8/src/compiler.cc \
 	v8/src/contexts.cc \
 	v8/src/conversions.cc \
@@ -79,7 +109,12 @@ LOCAL_SRC_FILES := \
 	v8/src/handles.cc \
 	v8/src/heap-profiler.cc \
 	v8/src/heap-snapshot-generator.cc \
-	v8/src/heap.cc \
+	v8/src/heap/gc-tracer.cc \
+	v8/src/heap/heap.cc \
+	v8/src/heap/incremental-marking.cc \
+	v8/src/heap/mark-compact.cc \
+	v8/src/heap/spaces.cc \
+	v8/src/heap/sweeper-thread.cc \
 	v8/src/hydrogen-bce.cc \
 	v8/src/hydrogen-bch.cc \
 	v8/src/hydrogen-canonicalize.cc \
@@ -108,7 +143,6 @@ LOCAL_SRC_FILES := \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
 	v8/src/ic.cc \
-	v8/src/incremental-marking.cc \
 	v8/src/interface.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
@@ -120,7 +154,6 @@ LOCAL_SRC_FILES := \
 	v8/src/log-utils.cc \
 	v8/src/log.cc \
 	v8/src/lookup.cc \
-	v8/src/mark-compact.cc \
 	v8/src/messages.cc \
 	v8/src/objects-debug.cc \
 	v8/src/objects-printer.cc \
@@ -150,13 +183,11 @@ LOCAL_SRC_FILES := \
 	v8/src/scopes.cc \
 	v8/src/serialize.cc \
 	v8/src/snapshot-source-sink.cc \
-	v8/src/spaces.cc \
 	v8/src/store-buffer.cc \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
 	v8/src/stub-cache.cc \
-	v8/src/sweeper-thread.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
 	v8/src/type-info.cc \
@@ -228,7 +259,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -244,6 +274,7 @@ MY_DEFS_Debug := \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DU_STATIC_IMPLEMENTATION' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -314,7 +345,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -330,6 +360,7 @@ MY_DEFS_Release := \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DU_STATIC_IMPLEMENTATION' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
