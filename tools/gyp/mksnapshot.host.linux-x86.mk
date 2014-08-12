@@ -21,8 +21,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_icu_icui18n_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/third_party_icu_icui18n_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_icu_icuuc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/third_party_icu_icuuc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_icu_icudata_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/third_party_icu_icudata_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp.a \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_js2c_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/js2c.stamp \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_generate_trig_table_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/generate_trig_table.stamp
+	$(call intermediates-dir-for,GYP,v8_tools_gyp_js2c_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/js2c.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -62,7 +61,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -139,7 +137,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
