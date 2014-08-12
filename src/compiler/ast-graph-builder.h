@@ -25,8 +25,7 @@ class Graph;
 // of function inlining.
 class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
  public:
-  AstGraphBuilder(CompilationInfo* info, JSGraph* jsgraph,
-                  SourcePositionTable* source_positions_);
+  AstGraphBuilder(CompilationInfo* info, JSGraph* jsgraph);
 
   // Creates a graph by visiting the entire AST.
   bool CreateGraph();
@@ -41,7 +40,8 @@ class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
   class Environment;
 
   Environment* environment() {
-    return reinterpret_cast<Environment*>(environment_internal());
+    return reinterpret_cast<Environment*>(
+        StructuredGraphBuilder::environment());
   }
 
   AstContext* ast_context() const { return ast_context_; }
@@ -56,8 +56,6 @@ class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
   // depends on the graph builder, but environments themselves are not virtual.
   typedef StructuredGraphBuilder::Environment BaseEnvironment;
   virtual BaseEnvironment* CopyEnvironment(BaseEnvironment* env);
-
-  SourcePositionTable* source_positions() { return source_positions_; }
 
   // TODO(mstarzinger): The pipeline only needs to be a friend to access the
   // function context. Remove as soon as the context is a parameter.
@@ -114,7 +112,6 @@ class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
   CompilationInfo* info_;
   AstContext* ast_context_;
   JSGraph* jsgraph_;
-  SourcePositionTable* source_positions_;
 
   // List of global declarations for functions and variables.
   ZoneList<Handle<Object> > globals_;
@@ -236,6 +233,7 @@ class AstGraphBuilder::Environment
     DCHECK(stack_height() > 0);
     Node* back = values()->back();
     values()->pop_back();
+    stack_dirty_ = true;
     return back;
   }
 
@@ -244,6 +242,7 @@ class AstGraphBuilder::Environment
     DCHECK(depth >= 0 && depth < stack_height());
     int index = static_cast<int>(values()->size()) - depth - 1;
     values()->at(index) = node;
+    stack_dirty_ = true;
   }
   Node* Peek(int depth) {
     DCHECK(depth >= 0 && depth < stack_height());
@@ -253,6 +252,7 @@ class AstGraphBuilder::Environment
   void Drop(int depth) {
     DCHECK(depth >= 0 && depth <= stack_height());
     values()->erase(values()->end() - depth, values()->end());
+    stack_dirty_ = true;
   }
 
   // Preserve a checkpoint of the environment for the IR graph. Any

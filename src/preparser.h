@@ -81,7 +81,6 @@ class ParserBase : public Traits {
         allow_lazy_(false),
         allow_natives_syntax_(false),
         allow_generators_(false),
-        allow_for_of_(false),
         allow_arrow_functions_(false),
         zone_(zone) {}
 
@@ -90,7 +89,6 @@ class ParserBase : public Traits {
   bool allow_lazy() const { return allow_lazy_; }
   bool allow_natives_syntax() const { return allow_natives_syntax_; }
   bool allow_generators() const { return allow_generators_; }
-  bool allow_for_of() const { return allow_for_of_; }
   bool allow_arrow_functions() const { return allow_arrow_functions_; }
   bool allow_modules() const { return scanner()->HarmonyModules(); }
   bool allow_harmony_scoping() const { return scanner()->HarmonyScoping(); }
@@ -103,7 +101,6 @@ class ParserBase : public Traits {
   void set_allow_lazy(bool allow) { allow_lazy_ = allow; }
   void set_allow_natives_syntax(bool allow) { allow_natives_syntax_ = allow; }
   void set_allow_generators(bool allow) { allow_generators_ = allow; }
-  void set_allow_for_of(bool allow) { allow_for_of_ = allow; }
   void set_allow_arrow_functions(bool allow) { allow_arrow_functions_ = allow; }
   void set_allow_modules(bool allow) { scanner()->SetHarmonyModules(allow); }
   void set_allow_harmony_scoping(bool allow) {
@@ -114,6 +111,8 @@ class ParserBase : public Traits {
   }
 
  protected:
+  friend class Traits::Type::Checkpoint;
+
   enum AllowEvalOrArgumentsAsIdentifier {
     kAllowEvalOrArguments,
     kDontAllowEvalOrArguments
@@ -123,6 +122,8 @@ class ParserBase : public Traits {
     PARSE_LAZILY,
     PARSE_EAGERLY
   };
+
+  class ParserCheckpoint;
 
   // ---------------------------------------------------------------------------
   // FunctionState and BlockState together implement the parser's scope stack.
@@ -219,6 +220,38 @@ class ParserBase : public Traits {
     typename Traits::Type::Factory factory_;
 
     friend class ParserTraits;
+    friend class ParserCheckpoint;
+  };
+
+  // Annoyingly, arrow functions first parse as comma expressions, then when we
+  // see the => we have to go back and reinterpret the arguments as being formal
+  // parameters.  To do so we need to reset some of the parser state back to
+  // what it was before the arguments were first seen.
+  class ParserCheckpoint : public Traits::Type::Checkpoint {
+   public:
+    template <typename Parser>
+    explicit ParserCheckpoint(Parser* parser)
+        : Traits::Type::Checkpoint(parser) {
+      function_state_ = parser->function_state_;
+      next_materialized_literal_index_ =
+          function_state_->next_materialized_literal_index_;
+      next_handler_index_ = function_state_->next_handler_index_;
+      expected_property_count_ = function_state_->expected_property_count_;
+    }
+
+    void Restore() {
+      Traits::Type::Checkpoint::Restore();
+      function_state_->next_materialized_literal_index_ =
+          next_materialized_literal_index_;
+      function_state_->next_handler_index_ = next_handler_index_;
+      function_state_->expected_property_count_ = expected_property_count_;
+    }
+
+   private:
+    FunctionState* function_state_;
+    int next_materialized_literal_index_;
+    int next_handler_index_;
+    int expected_property_count_;
   };
 
   class ParsingModeScope BASE_EMBEDDED {
@@ -534,7 +567,6 @@ class ParserBase : public Traits {
   bool allow_lazy_;
   bool allow_natives_syntax_;
   bool allow_generators_;
-  bool allow_for_of_;
   bool allow_arrow_functions_;
 
   typename Traits::Type::Zone* zone_;  // Only used by Parser.
@@ -1033,6 +1065,13 @@ class PreParserTraits {
     // Used by FunctionState and BlockState.
     typedef PreParserScope Scope;
     typedef PreParserScope ScopePtr;
+
+    class Checkpoint BASE_EMBEDDED {
+     public:
+      template <typename Parser>
+      explicit Checkpoint(Parser* parser) {}
+      void Restore() {}
+    };
 
     // PreParser doesn't need to store generator variables.
     typedef void GeneratorVariable;
@@ -2006,10 +2045,12 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, bool* ok) {
   }
 
   if (fni_ != NULL) fni_->Enter();
+  ParserCheckpoint checkpoint(this);
   ExpressionT expression =
       this->ParseConditionalExpression(accept_IN, CHECK_OK);
 
   if (allow_arrow_functions() && peek() == Token::ARROW) {
+    checkpoint.Restore();
     expression = this->ParseArrowFunctionLiteral(lhs_location.beg_pos,
                                                  expression, CHECK_OK);
     return expression;

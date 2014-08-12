@@ -253,7 +253,7 @@ Bounds Typer::Visitor::TypeExternalConstant(Node* node) {
 
 
 Bounds Typer::Visitor::TypePhi(Node* node) {
-  int arity = NodeProperties::GetValueInputCount(node);
+  int arity = OperatorProperties::GetValueInputCount(node->op());
   Bounds bounds = OperandType(node, 0);
   for (int i = 1; i < arity; ++i) {
     bounds = Bounds::Either(bounds, OperandType(node, i), zone());
@@ -268,6 +268,11 @@ Bounds Typer::Visitor::TypeEffectPhi(Node* node) {
 
 
 Bounds Typer::Visitor::TypeFrameState(Node* node) {
+  return Bounds(Type::None(zone()));
+}
+
+
+Bounds Typer::Visitor::TypeStateValues(Node* node) {
   return Bounds(Type::None(zone()));
 }
 

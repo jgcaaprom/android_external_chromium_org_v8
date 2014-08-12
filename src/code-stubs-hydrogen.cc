@@ -62,6 +62,8 @@ class CodeStubGraphBuilderBase : public HGraphBuilder {
 
   HLoadNamedField* BuildLoadNamedField(HValue* object,
                                        FieldIndex index);
+  void BuildStoreNamedField(HValue* object, HValue* value, FieldIndex index,
+                            Representation representation);
 
   enum ArgumentClass {
     NONE,
@@ -249,8 +251,7 @@ Handle<Code> HydrogenCodeStub::GenerateLightweightMissCode() {
 template <class Stub>
 static Handle<Code> DoGenerateCode(Stub* stub) {
   Isolate* isolate = stub->isolate();
-  CodeStub::Major  major_key =
-      static_cast<HydrogenCodeStub*>(stub)->MajorKey();
+  CodeStub::Major major_key = static_cast<CodeStub*>(stub)->MajorKey();
   CodeStubInterfaceDescriptor* descriptor =
       isolate->code_stub_interface_descriptor(major_key);
   if (!descriptor->IsInitialized()) {
@@ -590,7 +591,60 @@ Handle<Code> LoadFieldStub::GenerateCode() {
 }
 
 
-template<>
+template <>
+HValue* CodeStubGraphBuilder<LoadConstantStub>::BuildCodeStub() {
+  HValue* map = AddLoadMap(GetParameter(0), NULL);
+  HObjectAccess descriptors_access = HObjectAccess::ForObservableJSObjectOffset(
+      Map::kDescriptorsOffset, Representation::Tagged());
+  HValue* descriptors =
+      Add<HLoadNamedField>(map, static_cast<HValue*>(NULL), descriptors_access);
+  HObjectAccess value_access = HObjectAccess::ForObservableJSObjectOffset(
+      DescriptorArray::GetValueOffset(casted_stub()->descriptor()));
+  return Add<HLoadNamedField>(descriptors, static_cast<HValue*>(NULL),
+                              value_access);
+}
+
+
+Handle<Code> LoadConstantStub::GenerateCode() { return DoGenerateCode(this); }
+
+
+void CodeStubGraphBuilderBase::BuildStoreNamedField(
+    HValue* object, HValue* value, FieldIndex index,
+    Representation representation) {
+  DCHECK(!index.is_double() || representation.IsDouble());
+  int offset = index.offset();
+  HObjectAccess access =
+      index.is_inobject()
+          ? HObjectAccess::ForObservableJSObjectOffset(offset, representation)
+          : HObjectAccess::ForBackingStoreOffset(offset, representation);
+
+  if (representation.IsDouble()) {
+    // Load the heap number.
+    object = Add<HLoadNamedField>(
+        object, static_cast<HValue*>(NULL),
+        access.WithRepresentation(Representation::Tagged()));
+    // Store the double value into it.
+    access = HObjectAccess::ForHeapNumberValue();
+  } else if (representation.IsHeapObject()) {
+    BuildCheckHeapObject(value);
+  }
+
+  Add<HStoreNamedField>(object, access, value, INITIALIZING_STORE);
+}
+
+
+template <>
+HValue* CodeStubGraphBuilder<StoreFieldStub>::BuildCodeStub() {
+  BuildStoreNamedField(GetParameter(0), GetParameter(2), casted_stub()->index(),
+                       casted_stub()->representation());
+  return GetParameter(2);
+}
+
+
+Handle<Code> StoreFieldStub::GenerateCode() { return DoGenerateCode(this); }
+
+
+template <>
 HValue* CodeStubGraphBuilder<StringLengthStub>::BuildCodeStub() {
   HValue* string = BuildLoadNamedField(GetParameter(0),
       FieldIndex::ForInObjectOffset(JSValue::kValueOffset));
@@ -1010,14 +1064,31 @@ Handle<Code> StringAddStub::GenerateCode() {
 template <>
 HValue* CodeStubGraphBuilder<ToBooleanStub>::BuildCodeInitializedStub() {
   ToBooleanStub* stub = casted_stub();
+  HValue* true_value = NULL;
+  HValue* false_value = NULL;
+
+  switch (stub->GetMode()) {
+    case ToBooleanStub::RESULT_AS_SMI:
+      true_value = graph()->GetConstant1();
+      false_value = graph()->GetConstant0();
+      break;
+    case ToBooleanStub::RESULT_AS_ODDBALL:
+      true_value = graph()->GetConstantTrue();
+      false_value = graph()->GetConstantFalse();
+      break;
+    case ToBooleanStub::RESULT_AS_INVERSE_ODDBALL:
+      true_value = graph()->GetConstantFalse();
+      false_value = graph()->GetConstantTrue();
+      break;
+  }
 
   IfBuilder if_true(this);
   if_true.If<HBranch>(GetParameter(0), stub->GetTypes());
   if_true.Then();
-  if_true.Return(graph()->GetConstant1());
+  if_true.Return(true_value);
   if_true.Else();
   if_true.End();
-  return graph()->GetConstant0();
+  return false_value;
 }
 
 

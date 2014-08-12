@@ -2503,6 +2503,12 @@ bool Assembler::IsImmLSScaled(ptrdiff_t offset, LSDataSize size) {
 }
 
 
+bool Assembler::IsImmLSPair(ptrdiff_t offset, LSDataSize size) {
+  bool offset_is_size_multiple = (((offset >> size) << size) == offset);
+  return offset_is_size_multiple && is_int7(offset >> size);
+}
+
+
 // Test if a given value can be encoded in the immediate field of a logical
 // instruction.
 // If it can be encoded, the function returns true, and values pointed to by n,
@@ -2771,9 +2777,7 @@ void Assembler::GrowBuffer() {
 
   // Compute new buffer size.
   CodeDesc desc;  // the new buffer
-  if (buffer_size_ < 4 * KB) {
-    desc.buffer_size = 4 * KB;
-  } else if (buffer_size_ < 1 * MB) {
+  if (buffer_size_ < 1 * MB) {
     desc.buffer_size = 2 * buffer_size_;
   } else {
     desc.buffer_size = buffer_size_ + 1 * MB;

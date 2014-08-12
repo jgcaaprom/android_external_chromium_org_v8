@@ -85,16 +85,25 @@ class AstGraphBuilderWithPositions : public AstGraphBuilder {
  public:
   explicit AstGraphBuilderWithPositions(CompilationInfo* info, JSGraph* jsgraph,
                                         SourcePositionTable* source_positions)
-      : AstGraphBuilder(info, jsgraph, source_positions) {}
+      : AstGraphBuilder(info, jsgraph), source_positions_(source_positions) {}
+
+  bool CreateGraph() {
+    SourcePositionTable::Scope pos(source_positions_,
+                                   SourcePosition::Unknown());
+    return AstGraphBuilder::CreateGraph();
+  }
 
 #define DEF_VISIT(type)                                               \
   virtual void Visit##type(type* node) V8_OVERRIDE {                  \
-    SourcePositionTable::Scope pos(source_positions(),                \
+    SourcePositionTable::Scope pos(source_positions_,                 \
                                    SourcePosition(node->position())); \
     AstGraphBuilder::Visit##type(node);                               \
   }
   AST_NODE_LIST(DEF_VISIT)
 #undef DEF_VISIT
+
+ private:
+  SourcePositionTable* source_positions_;
 };
 
 
@@ -222,7 +231,7 @@ Schedule* Pipeline::ComputeSchedule(Graph* graph) {
 Handle<Code> Pipeline::GenerateCodeForMachineGraph(Linkage* linkage,
                                                    Graph* graph,
                                                    Schedule* schedule) {
-  CHECK(SupportedTarget());
+  CHECK(SupportedBackend());
   if (schedule == NULL) {
     VerifyAndPrintGraph(graph, "Machine");
     schedule = ComputeSchedule(graph);
@@ -248,7 +257,7 @@ Handle<Code> Pipeline::GenerateCode(Linkage* linkage, Graph* graph,
   DCHECK_NOT_NULL(graph);
   DCHECK_NOT_NULL(linkage);
   DCHECK_NOT_NULL(schedule);
-  DCHECK(SupportedTarget());
+  CHECK(SupportedBackend());
 
   InstructionSequence sequence(linkage, graph, schedule);
 

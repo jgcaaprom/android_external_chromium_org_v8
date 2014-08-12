@@ -108,7 +108,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
                                        this->start(), this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.Lower(change);
+    this->lowering.LowerChange(change, this->start(), this->start());
     Verifier::Run(this->graph());
   }
 
@@ -124,7 +124,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
         this->common()->Return(), this->Int32Constant(0), store, this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.Lower(change);
+    this->lowering.LowerChange(change, this->start(), this->start());
     Verifier::Run(this->graph());
   }
 
@@ -139,7 +139,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
                                        this->start(), this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.Lower(change);
+    this->lowering.LowerChange(change, this->start(), this->start());
     Verifier::Run(this->graph());
   }
 
@@ -213,7 +213,8 @@ TEST(RunChangeTaggedToFloat64) {
   double result;
 
   t.BuildStoreAndLower(t.simplified()->ChangeTaggedToFloat64(),
-                       t.machine()->Store(kMachineFloat64), &result);
+                       t.machine()->Store(kMachineFloat64, kNoWriteBarrier),
+                       &result);
 
   if (Pipeline::SupportedTarget()) {
     FOR_INT32_INPUTS(i) {
