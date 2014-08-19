@@ -120,7 +120,7 @@ class TrivialDeoptCodegenTester : public DeoptCodegenTester {
     //   deopt();
     // }
 
-    MachineRepresentation parameter_reps[] = {kMachineTagged};
+    MachineType parameter_reps[] = {kMachineTagged};
     MachineCallDescriptorBuilder descriptor_builder(kMachineTagged, 1,
                                                     parameter_reps);
 
@@ -149,8 +149,12 @@ class TrivialDeoptCodegenTester : public DeoptCodegenTester {
     m.NewNode(common.LazyDeoptimization(), call);
 
     bailout_id = GetCallBailoutId();
-    FrameStateDescriptor stateDescriptor(bailout_id);
-    Node* state_node = m.NewNode(common.FrameState(stateDescriptor));
+    Node* parameters = m.NewNode(common.StateValues(1), undef_node);
+    Node* locals = m.NewNode(common.StateValues(0));
+    Node* stack = m.NewNode(common.StateValues(0));
+
+    Node* state_node =
+        m.NewNode(common.FrameState(bailout_id), parameters, locals, stack);
     m.Deoptimize(state_node);
 
     // Schedule the graph:
@@ -252,7 +256,7 @@ class TrivialRuntimeDeoptCodegenTester : public DeoptCodegenTester {
     //   %DeoptimizeFunction(foo);
     // }
 
-    MachineRepresentation parameter_reps[] = {kMachineTagged};
+    MachineType parameter_reps[] = {kMachineTagged};
     MachineCallDescriptorBuilder descriptor_builder(kMachineTagged, 2,
                                                     parameter_reps);
 
@@ -280,8 +284,12 @@ class TrivialRuntimeDeoptCodegenTester : public DeoptCodegenTester {
     m.NewNode(common.LazyDeoptimization(), call);
 
     bailout_id = GetCallBailoutId();
-    FrameStateDescriptor stateDescriptor(bailout_id);
-    Node* state_node = m.NewNode(common.FrameState(stateDescriptor));
+    Node* parameters = m.NewNode(common.StateValues(1), undef_node);
+    Node* locals = m.NewNode(common.StateValues(0));
+    Node* stack = m.NewNode(common.StateValues(0));
+
+    Node* state_node =
+        m.NewNode(common.FrameState(bailout_id), parameters, locals, stack);
     m.Deoptimize(state_node);
 
     // Schedule the graph:

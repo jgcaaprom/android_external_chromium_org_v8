@@ -887,6 +887,9 @@ class Assembler : public AssemblerBase {
   // instruction stream that call will return from.
   inline static Address return_address_from_call_start(Address pc);
 
+  // Return the code target address of the patch debug break slot
+  inline static Address break_address_from_return_address(Address pc);
+
   // This sets the branch destination (which is in the constant pool on ARM).
   // This is for calls and branches within generated code.
   inline static void deserialization_set_special_target_at(
@@ -1942,6 +1945,10 @@ class Assembler : public AssemblerBase {
   static bool IsImmLSUnscaled(ptrdiff_t offset);
   static bool IsImmLSScaled(ptrdiff_t offset, LSDataSize size);
 
+  void LoadStorePair(const CPURegister& rt, const CPURegister& rt2,
+                     const MemOperand& addr, LoadStorePairOp op);
+  static bool IsImmLSPair(ptrdiff_t offset, LSDataSize size);
+
   void Logical(const Register& rd,
                const Register& rn,
                const Operand& operand,
@@ -2024,10 +2031,6 @@ class Assembler : public AssemblerBase {
                                 const Operand& operand,
                                 FlagsUpdate S,
                                 Instr op);
-  void LoadStorePair(const CPURegister& rt,
-                     const CPURegister& rt2,
-                     const MemOperand& addr,
-                     LoadStorePairOp op);
   void LoadStorePairNonTemporal(const CPURegister& rt,
                                 const CPURegister& rt2,
                                 const MemOperand& addr,

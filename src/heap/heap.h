@@ -14,11 +14,11 @@
 #include "src/heap/gc-tracer.h"
 #include "src/heap/incremental-marking.h"
 #include "src/heap/mark-compact.h"
+#include "src/heap/objects-visiting.h"
 #include "src/heap/spaces.h"
+#include "src/heap/store-buffer.h"
 #include "src/list.h"
-#include "src/objects-visiting.h"
 #include "src/splay-tree-inl.h"
-#include "src/store-buffer.h"
 
 namespace v8 {
 namespace internal {

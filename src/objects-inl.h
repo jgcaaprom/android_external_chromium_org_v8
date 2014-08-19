@@ -21,14 +21,14 @@
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking.h"
+#include "src/heap/objects-visiting.h"
 #include "src/heap/spaces.h"
+#include "src/heap/store-buffer.h"
 #include "src/isolate.h"
 #include "src/lookup.h"
 #include "src/objects.h"
-#include "src/objects-visiting.h"
 #include "src/property.h"
 #include "src/prototype.h"
-#include "src/store-buffer.h"
 #include "src/transitions-inl.h"
 #include "src/v8memory.h"
 
@@ -2206,7 +2206,8 @@ void FixedArray::set(int index, Smi* value) {
 
 
 void FixedArray::set(int index, Object* value) {
-  DCHECK(map() != GetHeap()->fixed_cow_array_map());
+  DCHECK_NE(GetHeap()->fixed_cow_array_map(), map());
+  DCHECK_EQ(FIXED_ARRAY_TYPE, map()->instance_type());
   DCHECK(index >= 0 && index < this->length());
   int offset = kHeaderSize + index * kPointerSize;
   WRITE_FIELD(this, offset, value);
@@ -2979,6 +2980,11 @@ void DescriptorArray::SetRepresentation(int descriptor_index,
 Object** DescriptorArray::GetValueSlot(int descriptor_number) {
   DCHECK(descriptor_number < number_of_descriptors());
   return RawFieldOfElementAt(ToValueIndex(descriptor_number));
+}
+
+
+int DescriptorArray::GetValueOffset(int descriptor_number) {
+  return OffsetOfElementAt(ToValueIndex(descriptor_number));
 }
 
 
@@ -4446,22 +4452,13 @@ bool Map::is_extensible() {
 }
 
 
-void Map::mark_prototype_map() {
-  set_bit_field2(IsPrototypeMapBits::update(bit_field2(), true));
+void Map::set_is_prototype_map(bool value) {
+  set_bit_field2(IsPrototypeMapBits::update(bit_field2(), value));
 }
 
 bool Map::is_prototype_map() {
   return IsPrototypeMapBits::decode(bit_field2());
 }
-
-
-void Map::set_is_shared(bool value) {
-  set_bit_field3(IsShared::update(bit_field3(), value));
-}
-
-
-bool Map::is_shared() {
-  return IsShared::decode(bit_field3()); }
 
 
 void Map::set_dictionary_map(bool value) {
@@ -4481,8 +4478,8 @@ Code::Flags Code::flags() {
 }
 
 
-void Map::set_owns_descriptors(bool is_shared) {
-  set_bit_field3(OwnsDescriptors::update(bit_field3(), is_shared));
+void Map::set_owns_descriptors(bool owns_descriptors) {
+  set_bit_field3(OwnsDescriptors::update(bit_field3(), owns_descriptors));
 }
 
 
@@ -5932,11 +5929,6 @@ ACCESSORS(JSFunction, prototype_or_initial_map, Object,
 
 Map* JSFunction::initial_map() {
   return Map::cast(prototype_or_initial_map());
-}
-
-
-void JSFunction::set_initial_map(Map* value) {
-  set_prototype_or_initial_map(value);
 }
 
 

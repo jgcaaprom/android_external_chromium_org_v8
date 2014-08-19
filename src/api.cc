@@ -1823,7 +1823,7 @@ v8::TryCatch::TryCatch()
       capture_message_(true),
       rethrow_(false),
       has_terminated_(false) {
-  Reset();
+  ResetInternal();
   // Special handling for simulators which have a separate JS stack.
   js_stack_comparable_address_ =
       reinterpret_cast<void*>(v8::internal::SimulatorStack::RegisterCTryCatch(
@@ -1935,6 +1935,17 @@ v8::Local<v8::Message> v8::TryCatch::Message() const {
 
 void v8::TryCatch::Reset() {
   DCHECK(isolate_ == i::Isolate::Current());
+  if (!rethrow_ && HasCaught() && isolate_->has_scheduled_exception()) {
+    // If an exception was caught but is still scheduled because no API call
+    // promoted it, then it is canceled to prevent it from being propagated.
+    // Note that this will not cancel termination exceptions.
+    isolate_->CancelScheduledExceptionFromTryCatch(this);
+  }
+  ResetInternal();
+}
+
+
+void v8::TryCatch::ResetInternal() {
   i::Object* the_hole = isolate_->heap()->the_hole_value();
   exception_ = the_hole;
   message_obj_ = the_hole;
@@ -3193,8 +3204,8 @@ bool v8::Object::SetPrototype(Handle<Value> value) {
   // to propagate outside.
   TryCatch try_catch;
   EXCEPTION_PREAMBLE(isolate);
-  i::MaybeHandle<i::Object> result = i::JSObject::SetPrototype(
-      self, value_obj);
+  i::MaybeHandle<i::Object> result =
+      i::JSObject::SetPrototype(self, value_obj, false);
   has_pending_exception = result.is_null();
   EXCEPTION_BAILOUT_CHECK(isolate, false);
   return true;
@@ -5464,7 +5475,7 @@ Local<String> v8::String::NewExternal(
 bool v8::String::MakeExternal(v8::String::ExternalStringResource* resource) {
   i::Handle<i::String> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
-  if (i::StringShape(*obj).IsExternalTwoByte()) {
+  if (i::StringShape(*obj).IsExternal()) {
     return false;  // Already an external string.
   }
   ENTER_V8(isolate);
@@ -5477,6 +5488,8 @@ bool v8::String::MakeExternal(v8::String::ExternalStringResource* resource) {
   CHECK(resource && resource->data());
 
   bool result = obj->MakeExternal(resource);
+  // Assert that if CanMakeExternal(), then externalizing actually succeeds.
+  DCHECK(!CanMakeExternal() || result);
   if (result) {
     DCHECK(obj->IsExternalString());
     isolate->heap()->external_string_table()->AddString(*obj);
@@ -5504,7 +5517,7 @@ bool v8::String::MakeExternal(
     v8::String::ExternalAsciiStringResource* resource) {
   i::Handle<i::String> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
-  if (i::StringShape(*obj).IsExternalTwoByte()) {
+  if (i::StringShape(*obj).IsExternal()) {
     return false;  // Already an external string.
   }
   ENTER_V8(isolate);
@@ -5517,6 +5530,8 @@ bool v8::String::MakeExternal(
   CHECK(resource && resource->data());
 
   bool result = obj->MakeExternal(resource);
+  // Assert that if CanMakeExternal(), then externalizing actually succeeds.
+  DCHECK(!CanMakeExternal() || result);
   if (result) {
     DCHECK(obj->IsExternalString());
     isolate->heap()->external_string_table()->AddString(*obj);

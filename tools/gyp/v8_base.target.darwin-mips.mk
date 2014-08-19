@@ -114,7 +114,9 @@ LOCAL_SRC_FILES := \
 	v8/src/heap/heap.cc \
 	v8/src/heap/incremental-marking.cc \
 	v8/src/heap/mark-compact.cc \
+	v8/src/heap/objects-visiting.cc \
 	v8/src/heap/spaces.cc \
+	v8/src/heap/store-buffer.cc \
 	v8/src/heap/sweeper-thread.cc \
 	v8/src/hydrogen-bce.cc \
 	v8/src/hydrogen-bch.cc \
@@ -158,7 +160,6 @@ LOCAL_SRC_FILES := \
 	v8/src/messages.cc \
 	v8/src/objects-debug.cc \
 	v8/src/objects-printer.cc \
-	v8/src/objects-visiting.cc \
 	v8/src/objects.cc \
 	v8/src/optimizing-compiler-thread.cc \
 	v8/src/ostreams.cc \
@@ -184,7 +185,6 @@ LOCAL_SRC_FILES := \
 	v8/src/scopes.cc \
 	v8/src/serialize.cc \
 	v8/src/snapshot-source-sink.cc \
-	v8/src/store-buffer.cc \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
@@ -201,6 +201,7 @@ LOCAL_SRC_FILES := \
 	v8/src/variables.cc \
 	v8/src/version.cc \
 	v8/src/zone.cc \
+	v8/third_party/fdlibm/fdlibm.cc \
 	v8/src/mips/assembler-mips.cc \
 	v8/src/mips/builtins-mips.cc \
 	v8/src/mips/codegen-mips.cc \
@@ -263,7 +264,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -382,7 +382,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

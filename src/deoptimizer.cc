@@ -447,8 +447,11 @@ static int FindPatchAddressForReturnAddress(Code* code, int pc) {
   int patch_count = input_data->ReturnAddressPatchCount();
   for (int i = 0; i < patch_count; i++) {
     int return_pc = input_data->ReturnAddressPc(i)->value();
-    if (pc == return_pc) {
-      return input_data->PatchedAddressPc(i)->value();
+    int patch_pc = input_data->PatchedAddressPc(i)->value();
+    // If the supplied pc matches the return pc or if the address
+    // has been already patched, return the patch pc.
+    if (pc == return_pc || pc == patch_pc) {
+      return patch_pc;
     }
   }
   return -1;
@@ -1624,6 +1627,9 @@ void Deoptimizer::DoComputeCompiledStubFrame(TranslationIterator* iterator,
   int major_key = CodeStub::GetMajorKey(compiled_code_);
   CodeStubInterfaceDescriptor* descriptor =
       isolate_->code_stub_interface_descriptor(major_key);
+  // Check that there is a matching descriptor to the major key.
+  // This will fail if there has not been one installed to the isolate.
+  DCHECK_EQ(descriptor->MajorKey(), major_key);
 
   // The output frame must have room for all pushed register parameters
   // and the standard stack frame slots.  Include space for an argument

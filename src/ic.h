@@ -163,11 +163,13 @@ class IC {
 
   char TransitionMarkFromState(IC::State state);
   void TraceIC(const char* type, Handle<Object> name);
+  void TraceIC(const char* type, Handle<Object> name, State old_state,
+               State new_state);
 
   MaybeHandle<Object> TypeError(const char* type,
                                 Handle<Object> object,
                                 Handle<Object> key);
-  MaybeHandle<Object> ReferenceError(const char* type, Handle<String> name);
+  MaybeHandle<Object> ReferenceError(const char* type, Handle<Name> name);
 
   // Access the target code for the given IC address.
   static inline Code* GetTargetAtAddress(Address address,
@@ -175,15 +177,18 @@ class IC {
   static inline void SetTargetAtAddress(Address address,
                                         Code* target,
                                         ConstantPoolArray* constant_pool);
+  static void OnTypeFeedbackChanged(Isolate* isolate, Address address,
+                                    State old_state, State new_state,
+                                    bool target_remains_ic_stub);
   static void PostPatching(Address address, Code* target, Code* old_target);
 
   // Compute the handler either by compiling or by retrieving a cached version.
   Handle<Code> ComputeHandler(LookupIterator* lookup, Handle<Object> object,
-                              Handle<String> name,
+                              Handle<Name> name,
                               Handle<Object> value = Handle<Code>::null());
   virtual Handle<Code> CompileHandler(LookupIterator* lookup,
                                       Handle<Object> object,
-                                      Handle<String> name, Handle<Object> value,
+                                      Handle<Name> name, Handle<Object> value,
                                       CacheHolderFlag cache_holder) {
     UNREACHABLE();
     return Handle<Code>::null();
@@ -191,24 +196,24 @@ class IC {
   // Temporary copy of the above, but using a LookupResult.
   // TODO(jkummerow): Migrate callers to LookupIterator and delete these.
   Handle<Code> ComputeStoreHandler(LookupResult* lookup, Handle<Object> object,
-                                   Handle<String> name,
+                                   Handle<Name> name,
                                    Handle<Object> value = Handle<Code>::null());
   virtual Handle<Code> CompileStoreHandler(LookupResult* lookup,
                                            Handle<Object> object,
-                                           Handle<String> name,
+                                           Handle<Name> name,
                                            Handle<Object> value,
                                            CacheHolderFlag cache_holder) {
     UNREACHABLE();
     return Handle<Code>::null();
   }
 
-  void UpdateMonomorphicIC(Handle<Code> handler, Handle<String> name);
-  bool UpdatePolymorphicIC(Handle<String> name, Handle<Code> code);
+  void UpdateMonomorphicIC(Handle<Code> handler, Handle<Name> name);
+  bool UpdatePolymorphicIC(Handle<Name> name, Handle<Code> code);
   void UpdateMegamorphicCache(HeapType* type, Name* name, Code* code);
 
-  void CopyICToMegamorphicCache(Handle<String> name);
+  void CopyICToMegamorphicCache(Handle<Name> name);
   bool IsTransitionOfMonomorphicTarget(Map* source_map, Map* target_map);
-  void PatchCache(Handle<String> name, Handle<Code> code);
+  void PatchCache(Handle<Name> name, Handle<Code> code);
   Code::Kind kind() const { return kind_; }
   Code::Kind handler_kind() const {
     if (kind_ == Code::KEYED_LOAD_IC) return Code::LOAD_IC;
@@ -332,8 +337,6 @@ class CallIC: public IC {
         : argc_(argc), call_type_(call_type) {
     }
 
-    InlineCacheState GetICState() const { return ::v8::internal::GENERIC; }
-
     ExtraICState GetExtraICState() const;
 
     static void GenerateAheadOfTime(
@@ -356,7 +359,8 @@ class CallIC: public IC {
       : IC(EXTRA_CALL_FRAME, isolate) {
   }
 
-  void PatchMegamorphic(Handle<FixedArray> vector, Handle<Smi> slot);
+  void PatchMegamorphic(Handle<Object> function, Handle<FixedArray> vector,
+                        Handle<Smi> slot);
 
   void HandleMiss(Handle<Object> receiver,
                   Handle<Object> function,
@@ -377,6 +381,10 @@ class CallIC: public IC {
 
   static void Clear(Isolate* isolate, Address address, Code* target,
                     ConstantPoolArray* constant_pool);
+
+ private:
+  inline IC::State FeedbackToState(Handle<FixedArray> vector,
+                                   Handle<Smi> slot) const;
 };
 
 
@@ -461,7 +469,7 @@ class LoadIC: public IC {
                                       ExtraICState extra_state);
 
   MUST_USE_RESULT MaybeHandle<Object> Load(Handle<Object> object,
-                                           Handle<String> name);
+                                           Handle<Name> name);
 
  protected:
   void set_target(Code* code) {
@@ -486,11 +494,11 @@ class LoadIC: public IC {
   // Update the inline cache and the global stub cache based on the
   // lookup result.
   void UpdateCaches(LookupIterator* lookup, Handle<Object> object,
-                    Handle<String> name);
+                    Handle<Name> name);
 
   virtual Handle<Code> CompileHandler(LookupIterator* lookup,
                                       Handle<Object> object,
-                                      Handle<String> name,
+                                      Handle<Name> name,
                                       Handle<Object> unused,
                                       CacheHolderFlag cache_holder);
 
@@ -620,7 +628,7 @@ class StoreIC: public IC {
 
   MUST_USE_RESULT MaybeHandle<Object> Store(
       Handle<Object> object,
-      Handle<String> name,
+      Handle<Name> name,
       Handle<Object> value,
       JSReceiver::StoreFromKeyed store_mode =
           JSReceiver::CERTAINLY_NOT_STORE_FROM_KEYED);
@@ -646,11 +654,11 @@ class StoreIC: public IC {
   // lookup result.
   void UpdateCaches(LookupResult* lookup,
                     Handle<JSObject> receiver,
-                    Handle<String> name,
+                    Handle<Name> name,
                     Handle<Object> value);
   virtual Handle<Code> CompileStoreHandler(LookupResult* lookup,
                                            Handle<Object> object,
-                                           Handle<String> name,
+                                           Handle<Name> name,
                                            Handle<Object> value,
                                            CacheHolderFlag cache_holder);
 

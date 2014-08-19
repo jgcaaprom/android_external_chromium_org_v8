@@ -270,6 +270,7 @@ MaybeHandle<String> Factory::NewStringFromTwoByte(Vector<const uc16> string,
   int length = string.length();
   const uc16* start = string.start();
   if (String::IsOneByte(start, length)) {
+    if (length == 1) return LookupSingleCharacterStringFromCode(string[0]);
     Handle<SeqOneByteString> result;
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate(),
@@ -1268,11 +1269,6 @@ Handle<JSFunction> Factory::NewFunction(Handle<String> name,
       ? isolate()->sloppy_function_with_readonly_prototype_map()
       : isolate()->sloppy_function_map();
   Handle<JSFunction> result = NewFunction(map, name, code);
-  if (!prototype->IsTheHole()) {
-    Handle<JSObject> js_proto = Handle<JSObject>::cast(prototype);
-    Handle<Map> new_map = Map::CopyAsPrototypeMap(handle(js_proto->map()));
-    JSObject::MigrateToMap(js_proto, new_map);
-  }
   result->set_prototype_or_initial_map(*prototype);
   return result;
 }
@@ -1293,9 +1289,9 @@ Handle<JSFunction> Factory::NewFunction(Handle<String> name,
   if (prototype->IsTheHole() && !function->shared()->is_generator()) {
     prototype = NewFunctionPrototype(function);
   }
-  initial_map->set_prototype(*prototype);
-  function->set_initial_map(*initial_map);
-  initial_map->set_constructor(*function);
+
+  JSFunction::SetInitialMap(function, initial_map,
+                            Handle<JSReceiver>::cast(prototype));
 
   return function;
 }
@@ -1323,9 +1319,10 @@ Handle<JSObject> Factory::NewFunctionPrototype(Handle<JSFunction> function) {
     // maps between prototypes of different constructors.
     Handle<JSFunction> object_function(native_context->object_function());
     DCHECK(object_function->has_initial_map());
-    new_map = Map::CopyAsPrototypeMap(handle(object_function->initial_map()));
+    new_map = handle(object_function->initial_map());
   }
 
+  DCHECK(!new_map->is_prototype_map());
   Handle<JSObject> prototype = NewJSObjectFromMap(new_map);
 
   if (!function->shared()->is_generator()) {
