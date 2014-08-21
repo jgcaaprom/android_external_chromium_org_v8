@@ -233,6 +233,7 @@ namespace internal {
   F(AddNamedProperty, 4, 1)                                           \
   F(AddPropertyForTemplate, 4, 1)                                     \
   F(SetProperty, 4, 1)                                                \
+  F(AddElement, 4, 1)                                                 \
   F(DefineApiAccessorProperty, 5, 1)                                  \
   F(DefineDataPropertyUnchecked, 4, 1)                                \
   F(DefineAccessorPropertyUnchecked, 5, 1)                            \
@@ -258,7 +259,7 @@ namespace internal {
   /* Harmony symbols */                                               \
   F(CreateSymbol, 1, 1)                                               \
   F(CreatePrivateSymbol, 1, 1)                                        \
-  F(CreateGlobalPrivateSymbol, 1, 1)                                  \
+  F(CreateGlobalPrivateOwnSymbol, 1, 1)                               \
   F(CreatePrivateOwnSymbol, 1, 1)                                     \
   F(NewSymbolWrapper, 1, 1)                                           \
   F(SymbolDescription, 1, 1)                                          \

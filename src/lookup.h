@@ -23,6 +23,7 @@ class LookupIterator V8_FINAL BASE_EMBEDDED {
 
     // Convience combinations of bits.
     CHECK_PROPERTY = 0,
+    CHECK_OWN = CHECK_ACCESS_CHECK | CHECK_INTERCEPTOR,
     CHECK_HIDDEN_SKIP_INTERCEPTOR = CHECK_HIDDEN_PROPERTY | CHECK_ACCESS_CHECK,
     CHECK_DERIVED_SKIP_INTERCEPTOR =
         CHECK_HIDDEN_SKIP_INTERCEPTOR | CHECK_DERIVED_PROPERTY,
@@ -31,11 +32,14 @@ class LookupIterator V8_FINAL BASE_EMBEDDED {
   };
 
   enum State {
+    ACCESS_CHECK,
+    INTERCEPTOR,
+    JSPROXY,
     NOT_FOUND,
     PROPERTY,
-    INTERCEPTOR,
-    ACCESS_CHECK,
-    JSPROXY
+    // Set state_ to BEFORE_PROPERTY to ensure that the next lookup will be a
+    // PROPERTY lookup.
+    BEFORE_PROPERTY = INTERCEPTOR
   };
 
   enum PropertyKind {
@@ -100,6 +104,10 @@ class LookupIterator V8_FINAL BASE_EMBEDDED {
 
   bool IsFound() const { return state_ != NOT_FOUND; }
   void Next();
+  void NotFound() {
+    has_property_ = false;
+    state_ = NOT_FOUND;
+  }
 
   Heap* heap() const { return isolate_->heap(); }
   Factory* factory() const { return isolate_->factory(); }
@@ -130,6 +138,9 @@ class LookupIterator V8_FINAL BASE_EMBEDDED {
                                 Object::StoreFromKeyed store_mode);
   void ReconfigureDataProperty(Handle<Object> value,
                                PropertyAttributes attributes);
+  void TransitionToAccessorProperty(AccessorComponent component,
+                                    Handle<Object> accessor,
+                                    PropertyAttributes attributes);
   PropertyKind property_kind() const {
     DCHECK(has_property_);
     return property_kind_;
@@ -162,6 +173,7 @@ class LookupIterator V8_FINAL BASE_EMBEDDED {
   MUST_USE_RESULT inline JSReceiver* NextHolder(Map* map);
   inline State LookupInHolder(Map* map);
   Handle<Object> FetchValue() const;
+  void ReloadPropertyInformation();
 
   bool IsBootstrapping() const;
 

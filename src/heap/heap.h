@@ -294,6 +294,7 @@ namespace internal {
   V(Symbol_string, "Symbol")                                       \
   V(for_string, "for")                                             \
   V(for_api_string, "for_api")                                     \
+  V(for_intern_string, "for_intern")                               \
   V(private_api_string, "private_api")                             \
   V(private_intern_string, "private_intern")                       \
   V(Date_string, "Date")                                           \
@@ -1049,7 +1050,7 @@ class Heap {
   void DisableInlineAllocation();
 
   // Implements the corresponding V8 API function.
-  bool IdleNotification(int hint);
+  bool IdleNotification(int idle_time_in_ms);
 
   // Declare all the root indices.  This defines the root list order.
   enum RootListIndex {
@@ -1950,7 +1951,7 @@ class Heap {
     return heap_size_mb / kMbPerMs;
   }
 
-  void AdvanceIdleIncrementalMarking(intptr_t step_size);
+  void AdvanceIdleIncrementalMarking(int idle_time_in_ms);
 
   void ClearObjectStats(bool clear_last_time_stats = false);
 
