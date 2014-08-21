@@ -61,6 +61,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/js-context-specialization.cc \
 	v8/src/compiler/js-generic-lowering.cc \
 	v8/src/compiler/js-graph.cc \
+	v8/src/compiler/js-inlining.cc \
 	v8/src/compiler/js-typed-lowering.cc \
 	v8/src/compiler/linkage.cc \
 	v8/src/compiler/machine-operator-reducer.cc \
@@ -111,6 +112,7 @@ LOCAL_SRC_FILES := \
 	v8/src/handles.cc \
 	v8/src/heap-profiler.cc \
 	v8/src/heap-snapshot-generator.cc \
+	v8/src/heap/gc-idle-time-handler.cc \
 	v8/src/heap/gc-tracer.cc \
 	v8/src/heap/heap.cc \
 	v8/src/heap/incremental-marking.cc \
