@@ -73,6 +73,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/schedule.cc \
 	v8/src/compiler/scheduler.cc \
 	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/simplified-operator-reducer.cc \
 	v8/src/compiler/source-position.cc \
 	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
@@ -147,7 +148,11 @@ LOCAL_SRC_FILES := \
 	v8/src/hydrogen-uint32-analysis.cc \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
-	v8/src/ic.cc \
+	v8/src/ic/access-compiler.cc \
+	v8/src/ic/call-optimization.cc \
+	v8/src/ic/handler-compiler.cc \
+	v8/src/ic/ic.cc \
+	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
@@ -190,7 +195,7 @@ LOCAL_SRC_FILES := \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
-	v8/src/stub-cache.cc \
+	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
 	v8/src/type-info.cc \
@@ -214,16 +219,19 @@ LOCAL_SRC_FILES := \
 	v8/src/ia32/disasm-ia32.cc \
 	v8/src/ia32/frames-ia32.cc \
 	v8/src/ia32/full-codegen-ia32.cc \
-	v8/src/ia32/ic-ia32.cc \
 	v8/src/ia32/lithium-codegen-ia32.cc \
 	v8/src/ia32/lithium-gap-resolver-ia32.cc \
 	v8/src/ia32/lithium-ia32.cc \
 	v8/src/ia32/macro-assembler-ia32.cc \
 	v8/src/ia32/regexp-macro-assembler-ia32.cc \
-	v8/src/ia32/stub-cache-ia32.cc \
 	v8/src/compiler/ia32/code-generator-ia32.cc \
 	v8/src/compiler/ia32/instruction-selector-ia32.cc \
-	v8/src/compiler/ia32/linkage-ia32.cc
+	v8/src/compiler/ia32/linkage-ia32.cc \
+	v8/src/ic/ia32/access-compiler-ia32.cc \
+	v8/src/ic/ia32/handler-compiler-ia32.cc \
+	v8/src/ic/ia32/ic-ia32.cc \
+	v8/src/ic/ia32/ic-compiler-ia32.cc \
+	v8/src/ic/ia32/stub-cache-ia32.cc
 
 
 # Flags passed to both C and C++ files.

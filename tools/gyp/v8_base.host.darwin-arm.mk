@@ -73,6 +73,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/schedule.cc \
 	v8/src/compiler/scheduler.cc \
 	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/simplified-operator-reducer.cc \
 	v8/src/compiler/source-position.cc \
 	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
@@ -147,7 +148,11 @@ LOCAL_SRC_FILES := \
 	v8/src/hydrogen-uint32-analysis.cc \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
-	v8/src/ic.cc \
+	v8/src/ic/access-compiler.cc \
+	v8/src/ic/call-optimization.cc \
+	v8/src/ic/handler-compiler.cc \
+	v8/src/ic/ic.cc \
+	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
@@ -190,7 +195,7 @@ LOCAL_SRC_FILES := \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
-	v8/src/stub-cache.cc \
+	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
 	v8/src/type-info.cc \
@@ -215,17 +220,20 @@ LOCAL_SRC_FILES := \
 	v8/src/arm/disasm-arm.cc \
 	v8/src/arm/frames-arm.cc \
 	v8/src/arm/full-codegen-arm.cc \
-	v8/src/arm/ic-arm.cc \
 	v8/src/arm/lithium-arm.cc \
 	v8/src/arm/lithium-codegen-arm.cc \
 	v8/src/arm/lithium-gap-resolver-arm.cc \
 	v8/src/arm/macro-assembler-arm.cc \
 	v8/src/arm/regexp-macro-assembler-arm.cc \
 	v8/src/arm/simulator-arm.cc \
-	v8/src/arm/stub-cache-arm.cc \
 	v8/src/compiler/arm/code-generator-arm.cc \
 	v8/src/compiler/arm/instruction-selector-arm.cc \
-	v8/src/compiler/arm/linkage-arm.cc
+	v8/src/compiler/arm/linkage-arm.cc \
+	v8/src/ic/arm/access-compiler-arm.cc \
+	v8/src/ic/arm/handler-compiler-arm.cc \
+	v8/src/ic/arm/ic-arm.cc \
+	v8/src/ic/arm/ic-compiler-arm.cc \
+	v8/src/ic/arm/stub-cache-arm.cc
 
 
 # Flags passed to both C and C++ files.

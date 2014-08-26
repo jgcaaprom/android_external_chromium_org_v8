@@ -73,6 +73,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/schedule.cc \
 	v8/src/compiler/scheduler.cc \
 	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/simplified-operator-reducer.cc \
 	v8/src/compiler/source-position.cc \
 	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
@@ -147,7 +148,11 @@ LOCAL_SRC_FILES := \
 	v8/src/hydrogen-uint32-analysis.cc \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
-	v8/src/ic.cc \
+	v8/src/ic/access-compiler.cc \
+	v8/src/ic/call-optimization.cc \
+	v8/src/ic/handler-compiler.cc \
+	v8/src/ic/ic.cc \
+	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
@@ -190,7 +195,7 @@ LOCAL_SRC_FILES := \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
-	v8/src/stub-cache.cc \
+	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
 	v8/src/type-info.cc \
@@ -216,7 +221,6 @@ LOCAL_SRC_FILES := \
 	v8/src/arm64/disasm-arm64.cc \
 	v8/src/arm64/frames-arm64.cc \
 	v8/src/arm64/full-codegen-arm64.cc \
-	v8/src/arm64/ic-arm64.cc \
 	v8/src/arm64/instructions-arm64.cc \
 	v8/src/arm64/instrument-arm64.cc \
 	v8/src/arm64/lithium-arm64.cc \
@@ -225,11 +229,15 @@ LOCAL_SRC_FILES := \
 	v8/src/arm64/macro-assembler-arm64.cc \
 	v8/src/arm64/regexp-macro-assembler-arm64.cc \
 	v8/src/arm64/simulator-arm64.cc \
-	v8/src/arm64/stub-cache-arm64.cc \
 	v8/src/arm64/utils-arm64.cc \
 	v8/src/compiler/arm64/code-generator-arm64.cc \
 	v8/src/compiler/arm64/instruction-selector-arm64.cc \
-	v8/src/compiler/arm64/linkage-arm64.cc
+	v8/src/compiler/arm64/linkage-arm64.cc \
+	v8/src/ic/arm64/access-compiler-arm64.cc \
+	v8/src/ic/arm64/handler-compiler-arm64.cc \
+	v8/src/ic/arm64/ic-arm64.cc \
+	v8/src/ic/arm64/ic-compiler-arm64.cc \
+	v8/src/ic/arm64/stub-cache-arm64.cc
 
 
 # Flags passed to both C and C++ files.

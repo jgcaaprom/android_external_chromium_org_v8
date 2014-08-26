@@ -73,6 +73,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/schedule.cc \
 	v8/src/compiler/scheduler.cc \
 	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/simplified-operator-reducer.cc \
 	v8/src/compiler/source-position.cc \
 	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
@@ -147,7 +148,11 @@ LOCAL_SRC_FILES := \
 	v8/src/hydrogen-uint32-analysis.cc \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
-	v8/src/ic.cc \
+	v8/src/ic/access-compiler.cc \
+	v8/src/ic/call-optimization.cc \
+	v8/src/ic/handler-compiler.cc \
+	v8/src/ic/ic.cc \
+	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
@@ -190,7 +195,7 @@ LOCAL_SRC_FILES := \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
-	v8/src/stub-cache.cc \
+	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
 	v8/src/type-info.cc \
@@ -214,16 +219,19 @@ LOCAL_SRC_FILES := \
 	v8/src/x64/disasm-x64.cc \
 	v8/src/x64/frames-x64.cc \
 	v8/src/x64/full-codegen-x64.cc \
-	v8/src/x64/ic-x64.cc \
 	v8/src/x64/lithium-codegen-x64.cc \
 	v8/src/x64/lithium-gap-resolver-x64.cc \
 	v8/src/x64/lithium-x64.cc \
 	v8/src/x64/macro-assembler-x64.cc \
 	v8/src/x64/regexp-macro-assembler-x64.cc \
-	v8/src/x64/stub-cache-x64.cc \
 	v8/src/compiler/x64/code-generator-x64.cc \
 	v8/src/compiler/x64/instruction-selector-x64.cc \
-	v8/src/compiler/x64/linkage-x64.cc
+	v8/src/compiler/x64/linkage-x64.cc \
+	v8/src/ic/x64/access-compiler-x64.cc \
+	v8/src/ic/x64/handler-compiler-x64.cc \
+	v8/src/ic/x64/ic-x64.cc \
+	v8/src/ic/x64/ic-compiler-x64.cc \
+	v8/src/ic/x64/stub-cache-x64.cc
 
 
 # Flags passed to both C and C++ files.
