@@ -8,7 +8,6 @@
 #include "src/arm64/lithium-gap-resolver-arm64.h"
 #include "src/code-stubs.h"
 #include "src/hydrogen-osr.h"
-#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -938,7 +937,7 @@ void LCodeGen::PopulateDeoptimizationData(Handle<Code> code) {
   if (length == 0) return;
 
   Handle<DeoptimizationInputData> data =
-      DeoptimizationInputData::New(isolate(), length, 0, TENURED);
+      DeoptimizationInputData::New(isolate(), length, TENURED);
 
   Handle<ByteArray> translations =
       translations_.CreateByteArray(isolate()->factory());
@@ -3345,19 +3344,25 @@ void LCodeGen::DoLoadGlobalCell(LLoadGlobalCell* instr) {
 }
 
 
+template <class T>
+void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
+  DCHECK(FLAG_vector_ics);
+  Register vector = ToRegister(instr->temp_vector());
+  DCHECK(vector.is(LoadIC::VectorRegister()));
+  __ Mov(vector, instr->hydrogen()->feedback_vector());
+  // No need to allocate this register.
+  DCHECK(LoadIC::SlotRegister().is(x0));
+  __ Mov(LoadIC::SlotRegister(), Smi::FromInt(instr->hydrogen()->slot()));
+}
+
+
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
   DCHECK(ToRegister(instr->global_object()).is(LoadIC::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).Is(x0));
   __ Mov(LoadIC::NameRegister(), Operand(instr->name()));
   if (FLAG_vector_ics) {
-    Register vector = ToRegister(instr->temp_vector());
-    DCHECK(vector.is(LoadIC::VectorRegister()));
-    __ Mov(vector, instr->hydrogen()->feedback_vector());
-    // No need to allocate this register.
-    DCHECK(LoadIC::SlotRegister().is(x0));
-    __ Mov(LoadIC::SlotRegister(),
-           Smi::FromInt(instr->hydrogen()->slot()));
+    EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   }
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), mode);
@@ -3612,13 +3617,7 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
   DCHECK(ToRegister(instr->key()).is(LoadIC::NameRegister()));
   if (FLAG_vector_ics) {
-    Register vector = ToRegister(instr->temp_vector());
-    DCHECK(vector.is(LoadIC::VectorRegister()));
-    __ Mov(vector, instr->hydrogen()->feedback_vector());
-    // No need to allocate this register.
-    DCHECK(LoadIC::SlotRegister().is(x0));
-    __ Mov(LoadIC::SlotRegister(),
-           Smi::FromInt(instr->hydrogen()->slot()));
+    EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
   Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
@@ -3674,13 +3673,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   DCHECK(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
   __ Mov(LoadIC::NameRegister(), Operand(instr->name()));
   if (FLAG_vector_ics) {
-    Register vector = ToRegister(instr->temp_vector());
-    DCHECK(vector.is(LoadIC::VectorRegister()));
-    __ Mov(vector, instr->hydrogen()->feedback_vector());
-    // No need to allocate this register.
-    DCHECK(LoadIC::SlotRegister().is(x0));
-    __ Mov(LoadIC::SlotRegister(),
-           Smi::FromInt(instr->hydrogen()->slot()));
+    EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   }
 
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), NOT_CONTEXTUAL);
@@ -4926,32 +4919,33 @@ void LCodeGen::DoShiftS(LShiftS* instr) {
   Register left = ToRegister(instr->left());
   Register result = ToRegister(instr->result());
 
-  // Only ROR by register needs a temp.
-  DCHECK(((instr->op() == Token::ROR) && right_op->IsRegister()) ||
-         (instr->temp() == NULL));
-
   if (right_op->IsRegister()) {
     Register right = ToRegister(instr->right());
+
+    // JavaScript shifts only look at the bottom 5 bits of the 'right' operand.
+    // Since we're handling smis in X registers, we have to extract these bits
+    // explicitly.
+    __ Ubfx(result, right, kSmiShift, 5);
+
     switch (instr->op()) {
       case Token::ROR: {
-        Register temp = ToRegister(instr->temp());
-        __ Ubfx(temp, right, kSmiShift, 5);
-        __ SmiUntag(result, left);
-        __ Ror(result.W(), result.W(), temp.W());
+        // This is the only case that needs a scratch register. To keep things
+        // simple for the other cases, borrow a MacroAssembler scratch register.
+        UseScratchRegisterScope temps(masm());
+        Register temp = temps.AcquireW();
+        __ SmiUntag(temp, left);
+        __ Ror(result.W(), temp.W(), result.W());
         __ SmiTag(result);
         break;
       }
       case Token::SAR:
-        __ Ubfx(result, right, kSmiShift, 5);
         __ Asr(result, left, result);
         __ Bic(result, result, kSmiShiftMask);
         break;
       case Token::SHL:
-        __ Ubfx(result, right, kSmiShift, 5);
         __ Lsl(result, left, result);
         break;
       case Token::SHR:
-        __ Ubfx(result, right, kSmiShift, 5);
         __ Lsr(result, left, result);
         __ Bic(result, result, kSmiShiftMask);
         if (instr->can_deopt()) {

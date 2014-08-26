@@ -122,7 +122,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArchDeoptimize: {
       int deoptimization_id = MiscField::decode(instr->opcode());
-      BuildTranslation(instr, deoptimization_id);
+      BuildTranslation(instr, 0, deoptimization_id);
 
       Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
           isolate(), deoptimization_id, Deoptimizer::LAZY);
@@ -246,13 +246,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         int entry = Code::kHeaderSize - kHeapObjectTag;
         __ call(Operand(reg, entry));
       }
-      RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                      Safepoint::kNoLazyDeopt);
 
-      bool lazy_deopt = (MiscField::decode(instr->opcode()) == 1);
-      if (lazy_deopt) {
-        RecordLazyDeoptimizationEntry(instr);
-      }
+      AddSafepointAndDeopt(instr);
+
       AddNopForSmiCodeInlining();
       break;
     }
@@ -277,9 +273,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ mov(esi, FieldOperand(func, JSFunction::kContextOffset));
       __ call(FieldOperand(func, JSFunction::kCodeEntryOffset));
 
-      RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                      Safepoint::kNoLazyDeopt);
-      RecordLazyDeoptimizationEntry(instr);
+      AddSafepointAndDeopt(instr);
       break;
     }
     case kSSEFloat64Cmp:
@@ -341,60 +335,60 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       // TODO(turbofan): IA32 SSE LoadUint32() should take an operand.
       __ LoadUint32(i.OutputDoubleRegister(), i.InputRegister(0));
       break;
-    case kSSELoad:
-      __ movsd(i.OutputDoubleRegister(), i.MemoryOperand());
+    case kIA32Movsxbl:
+      __ movsx_b(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kSSEStore: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ movsd(operand, i.InputDoubleRegister(index));
-      break;
-    }
-    case kIA32LoadWord8:
+    case kIA32Movzxbl:
       __ movzx_b(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kIA32StoreWord8: {
+    case kIA32Movb: {
       int index = 0;
       Operand operand = i.MemoryOperand(&index);
-      __ mov_b(operand, i.InputRegister(index));
+      if (HasImmediateInput(instr, index)) {
+        __ mov_b(operand, i.InputInt8(index));
+      } else {
+        __ mov_b(operand, i.InputRegister(index));
+      }
       break;
     }
-    case kIA32StoreWord8I: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov_b(operand, i.InputInt8(index));
+    case kIA32Movsxwl:
+      __ movsx_w(i.OutputRegister(), i.MemoryOperand());
       break;
-    }
-    case kIA32LoadWord16:
+    case kIA32Movzxwl:
       __ movzx_w(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kIA32StoreWord16: {
+    case kIA32Movw: {
       int index = 0;
       Operand operand = i.MemoryOperand(&index);
-      __ mov_w(operand, i.InputRegister(index));
+      if (HasImmediateInput(instr, index)) {
+        __ mov_w(operand, i.InputInt16(index));
+      } else {
+        __ mov_w(operand, i.InputRegister(index));
+      }
       break;
     }
-    case kIA32StoreWord16I: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov_w(operand, i.InputInt16(index));
+    case kIA32Movl:
+      if (instr->HasOutput()) {
+        __ mov(i.OutputRegister(), i.MemoryOperand());
+      } else {
+        int index = 0;
+        Operand operand = i.MemoryOperand(&index);
+        if (HasImmediateInput(instr, index)) {
+          __ mov(operand, i.InputImmediate(index));
+        } else {
+          __ mov(operand, i.InputRegister(index));
+        }
+      }
       break;
-    }
-    case kIA32LoadWord32:
-      __ mov(i.OutputRegister(), i.MemoryOperand());
+    case kIA32Movsd:
+      if (instr->HasOutput()) {
+        __ movsd(i.OutputDoubleRegister(), i.MemoryOperand());
+      } else {
+        int index = 0;
+        Operand operand = i.MemoryOperand(&index);
+        __ movsd(operand, i.InputDoubleRegister(index));
+      }
       break;
-    case kIA32StoreWord32: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov(operand, i.InputRegister(index));
-      break;
-    }
-    case kIA32StoreWord32I: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov(operand, i.InputImmediate(index));
-      break;
-    }
     case kIA32StoreWriteBarrier: {
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);

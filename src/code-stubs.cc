@@ -9,8 +9,8 @@
 #include "src/cpu-profiler.h"
 #include "src/factory.h"
 #include "src/gdb-jit.h"
+#include "src/ic/handler-compiler.h"
 #include "src/macro-assembler.h"
-#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -380,7 +380,7 @@ bool ICCompareStub::FindCodeInSpecialCache(Code** code_out) {
 }
 
 
-int ICCompareStub::MinorKey() const {
+uint32_t ICCompareStub::MinorKey() const {
   return OpField::encode(op_ - Token::EQ) |
          LeftStateField::encode(left_) |
          RightStateField::encode(right_) |
@@ -690,7 +690,7 @@ void StoreElementStub::Generate(MacroAssembler* masm) {
       UNREACHABLE();
       break;
     case DICTIONARY_ELEMENTS:
-      ElementHandlerCompiler::GenerateStoreDictionaryElement(masm);
+      ElementHandlerCompiler::GenerateStoreSlow(masm);
       break;
     case SLOPPY_ARGUMENTS_ELEMENTS:
       UNREACHABLE();

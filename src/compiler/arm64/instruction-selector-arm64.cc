@@ -143,6 +143,7 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
 
 void InstructionSelector::VisitLoad(Node* node) {
   MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
+  MachineType typ = TypeOf(OpParameter<MachineType>(node));
   Arm64OperandGenerator g(this);
   Node* base = node->InputAt(0);
   Node* index = node->InputAt(1);
@@ -155,21 +156,21 @@ void InstructionSelector::VisitLoad(Node* node) {
   // TODO(titzer): signed/unsigned small loads
   switch (rep) {
     case kRepFloat64:
-      opcode = kArm64Float64Load;
+      opcode = kArm64LdrD;
       break;
     case kRepBit:  // Fall through.
     case kRepWord8:
-      opcode = kArm64LoadWord8;
+      opcode = typ == kTypeInt32 ? kArm64Ldrsb : kArm64Ldrb;
       break;
     case kRepWord16:
-      opcode = kArm64LoadWord16;
+      opcode = typ == kTypeInt32 ? kArm64Ldrsh : kArm64Ldrh;
       break;
     case kRepWord32:
-      opcode = kArm64LoadWord32;
+      opcode = kArm64LdrW;
       break;
     case kRepTagged:  // Fall through.
     case kRepWord64:
-      opcode = kArm64LoadWord64;
+      opcode = kArm64Ldr;
       break;
     default:
       UNREACHABLE();
@@ -178,9 +179,6 @@ void InstructionSelector::VisitLoad(Node* node) {
   if (g.CanBeImmediate(index, kLoadStoreImm)) {
     Emit(opcode | AddressingModeField::encode(kMode_MRI), result,
          g.UseRegister(base), g.UseImmediate(index));
-  } else if (g.CanBeImmediate(base, kLoadStoreImm)) {
-    Emit(opcode | AddressingModeField::encode(kMode_MRI), result,
-         g.UseRegister(index), g.UseImmediate(base));
   } else {
     Emit(opcode | AddressingModeField::encode(kMode_MRR), result,
          g.UseRegister(base), g.UseRegister(index));
@@ -217,21 +215,21 @@ void InstructionSelector::VisitStore(Node* node) {
   ArchOpcode opcode;
   switch (rep) {
     case kRepFloat64:
-      opcode = kArm64Float64Store;
+      opcode = kArm64StrD;
       break;
     case kRepBit:  // Fall through.
     case kRepWord8:
-      opcode = kArm64StoreWord8;
+      opcode = kArm64Strb;
       break;
     case kRepWord16:
-      opcode = kArm64StoreWord16;
+      opcode = kArm64Strh;
       break;
     case kRepWord32:
-      opcode = kArm64StoreWord32;
+      opcode = kArm64StrW;
       break;
     case kRepTagged:  // Fall through.
     case kRepWord64:
-      opcode = kArm64StoreWord64;
+      opcode = kArm64Str;
       break;
     default:
       UNREACHABLE();
@@ -240,9 +238,6 @@ void InstructionSelector::VisitStore(Node* node) {
   if (g.CanBeImmediate(index, kLoadStoreImm)) {
     Emit(opcode | AddressingModeField::encode(kMode_MRI), NULL,
          g.UseRegister(base), g.UseImmediate(index), val);
-  } else if (g.CanBeImmediate(base, kLoadStoreImm)) {
-    Emit(opcode | AddressingModeField::encode(kMode_MRI), NULL,
-         g.UseRegister(index), g.UseImmediate(base), val);
   } else {
     Emit(opcode | AddressingModeField::encode(kMode_MRR), NULL,
          g.UseRegister(base), g.UseRegister(index), val);
@@ -596,7 +591,14 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
                                     BasicBlock* deoptimization) {
   Arm64OperandGenerator g(this);
   CallDescriptor* descriptor = OpParameter<CallDescriptor*>(call);
-  CallBuffer buffer(zone(), descriptor);  // TODO(turbofan): temp zone here?
+
+  FrameStateDescriptor* frame_state_descriptor = NULL;
+  if (descriptor->NeedsFrameState()) {
+    frame_state_descriptor =
+        GetFrameStateDescriptor(call->InputAt(descriptor->InputCount()));
+  }
+
+  CallBuffer buffer(zone(), descriptor, frame_state_descriptor);
 
   // Compute InstructionOperands for inputs and outputs.
   // TODO(turbofan): on ARM64 it's probably better to use the code object in a
@@ -607,8 +609,8 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
 
   // Push the arguments to the stack.
   bool is_c_frame = descriptor->kind() == CallDescriptor::kCallAddress;
-  bool pushed_count_uneven = buffer.pushed_count & 1;
-  int aligned_push_count = buffer.pushed_count;
+  bool pushed_count_uneven = buffer.pushed_nodes.size() & 1;
+  int aligned_push_count = buffer.pushed_nodes.size();
   if (is_c_frame && pushed_count_uneven) {
     aligned_push_count++;
   }
@@ -622,7 +624,7 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
   }
   // Move arguments to the stack.
   {
-    int slot = buffer.pushed_count - 1;
+    int slot = buffer.pushed_nodes.size() - 1;
     // Emit the uneven pushes.
     if (pushed_count_uneven) {
       Node* input = buffer.pushed_nodes[slot];
@@ -642,8 +644,7 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
   InstructionCode opcode;
   switch (descriptor->kind()) {
     case CallDescriptor::kCallCodeObject: {
-      bool lazy_deopt = descriptor->CanLazilyDeoptimize();
-      opcode = kArm64CallCodeObject | MiscField::encode(lazy_deopt ? 1 : 0);
+      opcode = kArm64CallCodeObject;
       break;
     }
     case CallDescriptor::kCallAddress:
@@ -656,11 +657,12 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
       UNREACHABLE();
       return;
   }
+  opcode |= MiscField::encode(descriptor->deoptimization_support());
 
   // Emit the call instruction.
   Instruction* call_instr =
-      Emit(opcode, buffer.output_count, buffer.outputs,
-           buffer.fixed_and_control_count(), buffer.fixed_and_control_args);
+      Emit(opcode, buffer.outputs.size(), &buffer.outputs.front(),
+           buffer.instruction_args.size(), &buffer.instruction_args.front());
 
   call_instr->MarkAsCall();
   if (deoptimization != NULL) {

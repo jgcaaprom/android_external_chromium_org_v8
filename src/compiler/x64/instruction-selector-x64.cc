@@ -57,6 +57,7 @@ class X64OperandGenerator V8_FINAL : public OperandGenerator {
 
 void InstructionSelector::VisitLoad(Node* node) {
   MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
+  MachineType typ = TypeOf(OpParameter<MachineType>(node));
   X64OperandGenerator g(this);
   Node* base = node->InputAt(0);
   Node* index = node->InputAt(1);
@@ -68,21 +69,21 @@ void InstructionSelector::VisitLoad(Node* node) {
   // TODO(titzer): signed/unsigned small loads
   switch (rep) {
     case kRepFloat64:
-      opcode = kSSELoad;
+      opcode = kX64Movsd;
       break;
     case kRepBit:  // Fall through.
     case kRepWord8:
-      opcode = kX64LoadWord8;
+      opcode = typ == kTypeInt32 ? kX64Movsxbl : kX64Movzxbl;
       break;
     case kRepWord16:
-      opcode = kX64LoadWord16;
+      opcode = typ == kTypeInt32 ? kX64Movsxwl : kX64Movzxwl;
       break;
     case kRepWord32:
-      opcode = kX64LoadWord32;
+      opcode = kX64Movl;
       break;
     case kRepTagged:  // Fall through.
     case kRepWord64:
-      opcode = kX64LoadWord64;
+      opcode = kX64Movq;
       break;
     default:
       UNREACHABLE();
@@ -123,13 +124,11 @@ void InstructionSelector::VisitStore(Node* node) {
     return;
   }
   DCHECK_EQ(kNoWriteBarrier, store_rep.write_barrier_kind);
-  bool is_immediate = false;
   InstructionOperand* val;
   if (rep == kRepFloat64) {
     val = g.UseDoubleRegister(value);
   } else {
-    is_immediate = g.CanBeImmediate(value);
-    if (is_immediate) {
+    if (g.CanBeImmediate(value)) {
       val = g.UseImmediate(value);
     } else if (rep == kRepWord8 || rep == kRepBit) {
       val = g.UseByteRegister(value);
@@ -140,21 +139,21 @@ void InstructionSelector::VisitStore(Node* node) {
   ArchOpcode opcode;
   switch (rep) {
     case kRepFloat64:
-      opcode = kSSEStore;
+      opcode = kX64Movsd;
       break;
     case kRepBit:  // Fall through.
     case kRepWord8:
-      opcode = is_immediate ? kX64StoreWord8I : kX64StoreWord8;
+      opcode = kX64Movb;
       break;
     case kRepWord16:
-      opcode = is_immediate ? kX64StoreWord16I : kX64StoreWord16;
+      opcode = kX64Movw;
       break;
     case kRepWord32:
-      opcode = is_immediate ? kX64StoreWord32I : kX64StoreWord32;
+      opcode = kX64Movl;
       break;
     case kRepTagged:  // Fall through.
     case kRepWord64:
-      opcode = is_immediate ? kX64StoreWord64I : kX64StoreWord64;
+      opcode = kX64Movq;
       break;
     default:
       UNREACHABLE();
@@ -676,7 +675,14 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
                                     BasicBlock* deoptimization) {
   X64OperandGenerator g(this);
   CallDescriptor* descriptor = OpParameter<CallDescriptor*>(call);
-  CallBuffer buffer(zone(), descriptor);  // TODO(turbofan): temp zone here?
+
+  FrameStateDescriptor* frame_state_descriptor = NULL;
+  if (descriptor->NeedsFrameState()) {
+    frame_state_descriptor =
+        GetFrameStateDescriptor(call->InputAt(descriptor->InputCount()));
+  }
+
+  CallBuffer buffer(zone(), descriptor, frame_state_descriptor);
 
   // Compute InstructionOperands for inputs and outputs.
   InitializeCallBuffer(call, &buffer, true, true, continuation, deoptimization);
@@ -684,13 +690,13 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
   // TODO(dcarney): stack alignment for c calls.
   // TODO(dcarney): shadow space on window for c calls.
   // Push any stack arguments.
-  for (int i = buffer.pushed_count - 1; i >= 0; --i) {
-    Node* input = buffer.pushed_nodes[i];
+  for (NodeVectorRIter input = buffer.pushed_nodes.rbegin();
+       input != buffer.pushed_nodes.rend(); input++) {
     // TODO(titzer): handle pushing double parameters.
-    if (g.CanBeImmediate(input)) {
-      Emit(kX64PushI, NULL, g.UseImmediate(input));
+    if (g.CanBeImmediate(*input)) {
+      Emit(kX64PushI, NULL, g.UseImmediate(*input));
     } else {
-      Emit(kX64Push, NULL, g.Use(input));
+      Emit(kX64Push, NULL, g.Use(*input));
     }
   }
 
@@ -698,8 +704,7 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
   InstructionCode opcode;
   switch (descriptor->kind()) {
     case CallDescriptor::kCallCodeObject: {
-      bool lazy_deopt = descriptor->CanLazilyDeoptimize();
-      opcode = kX64CallCodeObject | MiscField::encode(lazy_deopt ? 1 : 0);
+      opcode = kX64CallCodeObject;
       break;
     }
     case CallDescriptor::kCallAddress:
@@ -712,11 +717,12 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
       UNREACHABLE();
       return;
   }
+  opcode |= MiscField::encode(descriptor->deoptimization_support());
 
   // Emit the call instruction.
   Instruction* call_instr =
-      Emit(opcode, buffer.output_count, buffer.outputs,
-           buffer.fixed_and_control_count(), buffer.fixed_and_control_args);
+      Emit(opcode, buffer.outputs.size(), &buffer.outputs.front(),
+           buffer.instruction_args.size(), &buffer.instruction_args.front());
 
   call_instr->MarkAsCall();
   if (deoptimization != NULL) {
@@ -726,9 +732,11 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
 
   // Caller clean up of stack for C-style calls.
   if (descriptor->kind() == CallDescriptor::kCallAddress &&
-      buffer.pushed_count > 0) {
+      !buffer.pushed_nodes.empty()) {
     DCHECK(deoptimization == NULL && continuation == NULL);
-    Emit(kPopStack | MiscField::encode(buffer.pushed_count), NULL);
+    Emit(kPopStack |
+             MiscField::encode(static_cast<int>(buffer.pushed_nodes.size())),
+         NULL);
   }
 }
 

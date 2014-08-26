@@ -79,12 +79,10 @@
 
   # BUG(3525). Test crashes flakily.
   'test-debug/RecursiveBreakpoints': [PASS, FLAKY],
+  'test-debug/RecursiveBreakpointsGlobal': [PASS, FLAKY],
 
   ##############################################################################
   # TurboFan compiler failures.
-
-  # TODO(mstarzinger): These need investigation and are not categorized yet.
-  'test-heap/NextCodeLinkIsWeak': [PASS, NO_VARIANTS],
 
   # TODO(mstarzinger): Sometimes the try-catch blacklist fails.
   'test-debug/DebugEvaluateWithoutStack': [PASS, NO_VARIANTS],

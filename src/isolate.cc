@@ -19,6 +19,7 @@
 #include "src/heap/sweeper-thread.h"
 #include "src/heap-profiler.h"
 #include "src/hydrogen.h"
+#include "src/ic/stub-cache.h"
 #include "src/isolate-inl.h"
 #include "src/lithium-allocator.h"
 #include "src/log.h"
@@ -30,7 +31,6 @@
 #include "src/scopeinfo.h"
 #include "src/serialize.h"
 #include "src/simulator.h"
-#include "src/stub-cache.h"
 #include "src/version.h"
 #include "src/vm-state-inl.h"
 
@@ -1057,7 +1057,7 @@ void Isolate::DoThrow(Object* exception, MessageLocation* location) {
           // probably not a valid Error object.  In that case, we fall through
           // and capture the stack trace at this throw site.
           LookupIterator lookup(exception_handle, key,
-                                LookupIterator::CHECK_PROPERTY);
+                                LookupIterator::OWN_PROPERTY);
           Handle<Object> stack_trace_property;
           if (Object::GetProperty(&lookup).ToHandle(&stack_trace_property) &&
               stack_trace_property->IsJSArray()) {

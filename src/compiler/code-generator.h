@@ -46,8 +46,8 @@ class CodeGenerator V8_FINAL : public GapResolver::Assembler {
   }
 
   // Record a safepoint with the given pointer map.
-  void RecordSafepoint(PointerMap* pointers, Safepoint::Kind kind,
-                       int arguments, Safepoint::DeoptMode deopt_mode);
+  Safepoint::Id RecordSafepoint(PointerMap* pointers, Safepoint::Kind kind,
+                                int arguments, Safepoint::DeoptMode deopt_mode);
 
   // Assemble code for the specified instruction.
   void AssembleInstruction(Instruction* instr);
@@ -81,10 +81,14 @@ class CodeGenerator V8_FINAL : public GapResolver::Assembler {
 
   // ===========================================================================
   // Deoptimization table construction
-  void RecordLazyDeoptimizationEntry(Instruction* instr);
+  void AddSafepointAndDeopt(Instruction* instr);
+  void UpdateSafepointsWithDeoptimizationPc();
+  void RecordLazyDeoptimizationEntry(Instruction* instr,
+                                     Safepoint::Id safepoint_id);
   void PopulateDeoptimizationData(Handle<Code> code);
   int DefineDeoptimizationLiteral(Handle<Object> literal);
-  void BuildTranslation(Instruction* instr, int deoptimization_id);
+  void BuildTranslation(Instruction* instr, int first_argument_index,
+                        int deoptimization_id);
   void AddTranslationForOperand(Translation* translation, Instruction* instr,
                                 InstructionOperand* op);
   void AddNopForSmiCodeInlining();
@@ -93,19 +97,22 @@ class CodeGenerator V8_FINAL : public GapResolver::Assembler {
   class LazyDeoptimizationEntry V8_FINAL {
    public:
     LazyDeoptimizationEntry(int position_after_call, Label* continuation,
-                            Label* deoptimization)
+                            Label* deoptimization, Safepoint::Id safepoint_id)
         : position_after_call_(position_after_call),
           continuation_(continuation),
-          deoptimization_(deoptimization) {}
+          deoptimization_(deoptimization),
+          safepoint_id_(safepoint_id) {}
 
     int position_after_call() const { return position_after_call_; }
     Label* continuation() const { return continuation_; }
     Label* deoptimization() const { return deoptimization_; }
+    Safepoint::Id safepoint_id() const { return safepoint_id_; }
 
    private:
     int position_after_call_;
     Label* continuation_;
     Label* deoptimization_;
+    Safepoint::Id safepoint_id_;
   };
 
   struct DeoptimizationState : ZoneObject {

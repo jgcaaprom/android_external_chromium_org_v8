@@ -42,6 +42,7 @@ class IA32OperandGenerator V8_FINAL : public OperandGenerator {
 
 void InstructionSelector::VisitLoad(Node* node) {
   MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
+  MachineType typ = TypeOf(OpParameter<MachineType>(node));
   IA32OperandGenerator g(this);
   Node* base = node->InputAt(0);
   Node* index = node->InputAt(1);
@@ -53,18 +54,18 @@ void InstructionSelector::VisitLoad(Node* node) {
   // TODO(titzer): signed/unsigned small loads
   switch (rep) {
     case kRepFloat64:
-      opcode = kSSELoad;
+      opcode = kIA32Movsd;
       break;
     case kRepBit:  // Fall through.
     case kRepWord8:
-      opcode = kIA32LoadWord8;
+      opcode = typ == kTypeInt32 ? kIA32Movsxbl : kIA32Movzxbl;
       break;
     case kRepWord16:
-      opcode = kIA32LoadWord16;
+      opcode = typ == kTypeInt32 ? kIA32Movsxwl : kIA32Movzxwl;
       break;
     case kRepTagged:  // Fall through.
     case kRepWord32:
-      opcode = kIA32LoadWord32;
+      opcode = kIA32Movl;
       break;
     default:
       UNREACHABLE();
@@ -109,13 +110,11 @@ void InstructionSelector::VisitStore(Node* node) {
     return;
   }
   DCHECK_EQ(kNoWriteBarrier, store_rep.write_barrier_kind);
-  bool is_immediate = false;
   InstructionOperand* val;
   if (rep == kRepFloat64) {
     val = g.UseDoubleRegister(value);
   } else {
-    is_immediate = g.CanBeImmediate(value);
-    if (is_immediate) {
+    if (g.CanBeImmediate(value)) {
       val = g.UseImmediate(value);
     } else if (rep == kRepWord8 || rep == kRepBit) {
       val = g.UseByteRegister(value);
@@ -126,18 +125,18 @@ void InstructionSelector::VisitStore(Node* node) {
   ArchOpcode opcode;
   switch (rep) {
     case kRepFloat64:
-      opcode = kSSEStore;
+      opcode = kIA32Movsd;
       break;
     case kRepBit:  // Fall through.
     case kRepWord8:
-      opcode = is_immediate ? kIA32StoreWord8I : kIA32StoreWord8;
+      opcode = kIA32Movb;
       break;
     case kRepWord16:
-      opcode = is_immediate ? kIA32StoreWord16I : kIA32StoreWord16;
+      opcode = kIA32Movw;
       break;
     case kRepTagged:  // Fall through.
     case kRepWord32:
-      opcode = is_immediate ? kIA32StoreWord32I : kIA32StoreWord32;
+      opcode = kIA32Movl;
       break;
     default:
       UNREACHABLE();
@@ -512,25 +511,32 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
                                     BasicBlock* deoptimization) {
   IA32OperandGenerator g(this);
   CallDescriptor* descriptor = OpParameter<CallDescriptor*>(call);
-  CallBuffer buffer(zone(), descriptor);
+
+  FrameStateDescriptor* frame_state_descriptor = NULL;
+
+  if (descriptor->NeedsFrameState()) {
+    frame_state_descriptor =
+        GetFrameStateDescriptor(call->InputAt(descriptor->InputCount()));
+  }
+
+  CallBuffer buffer(zone(), descriptor, frame_state_descriptor);
 
   // Compute InstructionOperands for inputs and outputs.
   InitializeCallBuffer(call, &buffer, true, true, continuation, deoptimization);
 
   // Push any stack arguments.
-  for (int i = buffer.pushed_count - 1; i >= 0; --i) {
-    Node* input = buffer.pushed_nodes[i];
+  for (NodeVectorRIter input = buffer.pushed_nodes.rbegin();
+       input != buffer.pushed_nodes.rend(); input++) {
     // TODO(titzer): handle pushing double parameters.
     Emit(kIA32Push, NULL,
-         g.CanBeImmediate(input) ? g.UseImmediate(input) : g.Use(input));
+         g.CanBeImmediate(*input) ? g.UseImmediate(*input) : g.Use(*input));
   }
 
   // Select the appropriate opcode based on the call type.
   InstructionCode opcode;
   switch (descriptor->kind()) {
     case CallDescriptor::kCallCodeObject: {
-      bool lazy_deopt = descriptor->CanLazilyDeoptimize();
-      opcode = kIA32CallCodeObject | MiscField::encode(lazy_deopt ? 1 : 0);
+      opcode = kIA32CallCodeObject;
       break;
     }
     case CallDescriptor::kCallAddress:
@@ -543,11 +549,12 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
       UNREACHABLE();
       return;
   }
+  opcode |= MiscField::encode(descriptor->deoptimization_support());
 
   // Emit the call instruction.
   Instruction* call_instr =
-      Emit(opcode, buffer.output_count, buffer.outputs,
-           buffer.fixed_and_control_count(), buffer.fixed_and_control_args);
+      Emit(opcode, buffer.outputs.size(), &buffer.outputs.front(),
+           buffer.instruction_args.size(), &buffer.instruction_args.front());
 
   call_instr->MarkAsCall();
   if (deoptimization != NULL) {
@@ -557,9 +564,9 @@ void InstructionSelector::VisitCall(Node* call, BasicBlock* continuation,
 
   // Caller clean up of stack for C-style calls.
   if (descriptor->kind() == CallDescriptor::kCallAddress &&
-      buffer.pushed_count > 0) {
+      buffer.pushed_nodes.size() > 0) {
     DCHECK(deoptimization == NULL && continuation == NULL);
-    Emit(kPopStack | MiscField::encode(buffer.pushed_count), NULL);
+    Emit(kPopStack | MiscField::encode(buffer.pushed_nodes.size()), NULL);
   }
 }
 

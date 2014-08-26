@@ -142,7 +142,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArchDeoptimize: {
       int deoptimization_id = MiscField::decode(instr->opcode());
-      BuildTranslation(instr, deoptimization_id);
+      BuildTranslation(instr, 0, deoptimization_id);
 
       Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
           isolate(), deoptimization_id, Deoptimizer::LAZY);
@@ -287,20 +287,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       if (instr->InputAt(0)->IsImmediate()) {
         Handle<Code> code = Handle<Code>::cast(i.InputHeapObject(0));
         __ Call(code, RelocInfo::CODE_TARGET);
-        RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                        Safepoint::kNoLazyDeopt);
       } else {
         Register reg = i.InputRegister(0);
         int entry = Code::kHeaderSize - kHeapObjectTag;
         __ Ldr(reg, MemOperand(reg, entry));
         __ Call(reg);
-        RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                        Safepoint::kNoLazyDeopt);
       }
-      bool lazy_deopt = (MiscField::decode(instr->opcode()) == 1);
-      if (lazy_deopt) {
-        RecordLazyDeoptimizationEntry(instr);
-      }
+
+      AddSafepointAndDeopt(instr);
       // Meaningless instruction for ICs to overwrite.
       AddNopForSmiCodeInlining();
       break;
@@ -313,9 +307,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Ldr(x10, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(x10);
 
-      RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                      Safepoint::kNoLazyDeopt);
-      RecordLazyDeoptimizationEntry(instr);
+      AddSafepointAndDeopt(instr);
       break;
     }
     case kArm64CallAddress: {
@@ -404,34 +396,40 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArm64Uint32ToFloat64:
       __ Ucvtf(i.OutputDoubleRegister(), i.InputRegister32(0));
       break;
-    case kArm64LoadWord8:
+    case kArm64Ldrb:
       __ Ldrb(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kArm64StoreWord8:
+    case kArm64Ldrsb:
+      __ Ldrsb(i.OutputRegister(), i.MemoryOperand());
+      break;
+    case kArm64Strb:
       __ Strb(i.InputRegister(2), i.MemoryOperand());
       break;
-    case kArm64LoadWord16:
+    case kArm64Ldrh:
       __ Ldrh(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kArm64StoreWord16:
+    case kArm64Ldrsh:
+      __ Ldrsh(i.OutputRegister(), i.MemoryOperand());
+      break;
+    case kArm64Strh:
       __ Strh(i.InputRegister(2), i.MemoryOperand());
       break;
-    case kArm64LoadWord32:
+    case kArm64LdrW:
       __ Ldr(i.OutputRegister32(), i.MemoryOperand());
       break;
-    case kArm64StoreWord32:
+    case kArm64StrW:
       __ Str(i.InputRegister32(2), i.MemoryOperand());
       break;
-    case kArm64LoadWord64:
+    case kArm64Ldr:
       __ Ldr(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kArm64StoreWord64:
+    case kArm64Str:
       __ Str(i.InputRegister(2), i.MemoryOperand());
       break;
-    case kArm64Float64Load:
+    case kArm64LdrD:
       __ Ldr(i.OutputDoubleRegister(), i.MemoryOperand());
       break;
-    case kArm64Float64Store:
+    case kArm64StrD:
       __ Str(i.InputDoubleRegister(2), i.MemoryOperand());
       break;
     case kArm64StoreWriteBarrier: {

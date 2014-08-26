@@ -150,7 +150,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArchDeoptimize: {
       int deoptimization_id = MiscField::decode(instr->opcode());
-      BuildTranslation(instr, deoptimization_id);
+      BuildTranslation(instr, 0, deoptimization_id);
 
       Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
           isolate(), deoptimization_id, Deoptimizer::LAZY);
@@ -240,20 +240,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       if (instr->InputAt(0)->IsImmediate()) {
         Handle<Code> code = Handle<Code>::cast(i.InputHeapObject(0));
         __ Call(code, RelocInfo::CODE_TARGET);
-        RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                        Safepoint::kNoLazyDeopt);
       } else {
         Register reg = i.InputRegister(0);
         int entry = Code::kHeaderSize - kHeapObjectTag;
         __ ldr(reg, MemOperand(reg, entry));
         __ Call(reg);
-        RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                        Safepoint::kNoLazyDeopt);
       }
-      bool lazy_deopt = (MiscField::decode(instr->opcode()) == 1);
-      if (lazy_deopt) {
-        RecordLazyDeoptimizationEntry(instr);
-      }
+
+      AddSafepointAndDeopt(instr);
+
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
@@ -265,9 +260,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ ldr(ip, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(ip);
 
-      RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                      Safepoint::kNoLazyDeopt);
-      RecordLazyDeoptimizationEntry(instr);
+      AddSafepointAndDeopt(instr);
+
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
@@ -383,42 +377,49 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
-    case kArmLoadWord8:
+    case kArmLdrb:
       __ ldrb(i.OutputRegister(), i.InputOffset());
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
-    case kArmStoreWord8: {
+    case kArmLdrsb:
+      __ ldrsb(i.OutputRegister(), i.InputOffset());
+      DCHECK_EQ(LeaveCC, i.OutputSBit());
+      break;
+    case kArmStrb: {
       int index = 0;
       MemOperand operand = i.InputOffset(&index);
       __ strb(i.InputRegister(index), operand);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
-    case kArmLoadWord16:
+    case kArmLdrh:
       __ ldrh(i.OutputRegister(), i.InputOffset());
       break;
-    case kArmStoreWord16: {
+    case kArmLdrsh:
+      __ ldrsh(i.OutputRegister(), i.InputOffset());
+      break;
+    case kArmStrh: {
       int index = 0;
       MemOperand operand = i.InputOffset(&index);
       __ strh(i.InputRegister(index), operand);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
-    case kArmLoadWord32:
+    case kArmLdr:
       __ ldr(i.OutputRegister(), i.InputOffset());
       break;
-    case kArmStoreWord32: {
+    case kArmStr: {
       int index = 0;
       MemOperand operand = i.InputOffset(&index);
       __ str(i.InputRegister(index), operand);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
-    case kArmFloat64Load:
+    case kArmVldr64:
       __ vldr(i.OutputDoubleRegister(), i.InputOffset());
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
-    case kArmFloat64Store: {
+    case kArmVstr64: {
       int index = 0;
       MemOperand operand = i.InputOffset(&index);
       __ vstr(i.InputDoubleRegister(index), operand);
