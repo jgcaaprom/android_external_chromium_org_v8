@@ -102,7 +102,6 @@ LOCAL_SRC_FILES := \
 	v8/src/extensions/trigger-failure-extension.cc \
 	v8/src/factory.cc \
 	v8/src/fast-dtoa.cc \
-	v8/src/field-index.cc \
 	v8/src/fixed-dtoa.cc \
 	v8/src/flags.cc \
 	v8/src/frames.cc \
@@ -232,6 +231,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/x64/handler-compiler-x64.cc \
 	v8/src/ic/x64/ic-x64.cc \
 	v8/src/ic/x64/ic-compiler-x64.cc \
+	v8/src/ic/x64/ic-conventions-x64.cc \
 	v8/src/ic/x64/stub-cache-x64.cc
 
 

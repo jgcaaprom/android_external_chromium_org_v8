@@ -101,7 +101,6 @@ LOCAL_SRC_FILES := \
 	v8/src/extensions/trigger-failure-extension.cc \
 	v8/src/factory.cc \
 	v8/src/fast-dtoa.cc \
-	v8/src/field-index.cc \
 	v8/src/fixed-dtoa.cc \
 	v8/src/flags.cc \
 	v8/src/frames.cc \
@@ -230,6 +229,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/mips/handler-compiler-mips.cc \
 	v8/src/ic/mips/ic-mips.cc \
 	v8/src/ic/mips/ic-compiler-mips.cc \
+	v8/src/ic/mips/ic-conventions-mips.cc \
 	v8/src/ic/mips/stub-cache-mips.cc
 
 
