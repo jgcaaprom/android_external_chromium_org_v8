@@ -248,8 +248,6 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-unused-local-typedefs \
 	-Wno-format \
-	-EL \
-	-mhard-float \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -365,8 +363,6 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-unused-local-typedefs \
 	-Wno-format \
-	-EL \
-	-mhard-float \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -477,7 +473,6 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
-	-EL \
 	-Wl,--no-keep-memory \
 	-nostdlib \
 	-Wl,--no-undefined \
@@ -493,7 +488,6 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--fatal-warnings \
 	-Wl,-z,noexecstack \
 	-fPIC \
-	-EL \
 	-Wl,--no-keep-memory \
 	-nostdlib \
 	-Wl,--no-undefined \
