@@ -2019,16 +2019,14 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ Ubfx(right, right, kSmiShift, 5);
       __ Lsl(result, left, right);
       break;
-    case Token::SHR: {
-      Label right_not_zero;
-      __ Cbnz(right, &right_not_zero);
-      __ Tbnz(left, kXSignBit, &stub_call);
-      __ Bind(&right_not_zero);
+    case Token::SHR:
+      // If `left >>> right` >= 0x80000000, the result is not representable in a
+      // signed 32-bit smi.
       __ Ubfx(right, right, kSmiShift, 5);
-      __ Lsr(result, left, right);
-      __ Bic(result, result, kSmiShiftMask);
+      __ Lsr(x10, left, right);
+      __ Tbnz(x10, kXSignBit, &stub_call);
+      __ Bic(result, x10, kSmiShiftMask);
       break;
-    }
     case Token::ADD:
       __ Adds(x10, left, right);
       __ B(vs, &stub_call);
@@ -3015,7 +3013,7 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
 
   // Functions have class 'Function'.
   __ Bind(&function);
-  __ LoadRoot(x0, Heap::kfunction_class_stringRootIndex);
+  __ LoadRoot(x0, Heap::kFunction_stringRootIndex);
   __ B(&done);
 
   // Objects with a non-function constructor have class 'Object'.

@@ -57,7 +57,6 @@
         'compiler/test-codegen-deopt.cc',
         'compiler/test-gap-resolver.cc',
         'compiler/test-graph-reducer.cc',
-        'compiler/test-instruction-selector.cc',
         'compiler/test-instruction.cc',
         'compiler/test-js-context-specialization.cc',
         'compiler/test-js-constant-cache.cc',
@@ -72,6 +71,7 @@
         'compiler/test-pipeline.cc',
         'compiler/test-representation-change.cc',
         'compiler/test-run-deopt.cc',
+        'compiler/test-run-inlining.cc',
         'compiler/test-run-intrinsics.cc',
         'compiler/test-run-jsbranches.cc',
         'compiler/test-run-jscalls.cc',
@@ -167,7 +167,6 @@
       'conditions': [
         ['v8_target_arch=="ia32"', {
           'sources': [  ### gcmole(arch:ia32) ###
-            'compiler/test-instruction-selector-ia32.cc',
             'test-assembler-ia32.cc',
             'test-code-stubs.cc',
             'test-code-stubs-ia32.cc',
@@ -188,7 +187,6 @@
         }],
         ['v8_target_arch=="arm"', {
           'sources': [  ### gcmole(arch:arm) ###
-            'compiler/test-instruction-selector-arm.cc',
             'test-assembler-arm.cc',
             'test-code-stubs.cc',
             'test-code-stubs-arm.cc',

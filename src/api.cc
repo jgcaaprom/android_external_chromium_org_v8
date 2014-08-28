@@ -828,7 +828,7 @@ static void TemplateSet(i::Isolate* isolate,
 }
 
 
-void Template::Set(v8::Handle<String> name,
+void Template::Set(v8::Handle<Name> name,
                    v8::Handle<Data> value,
                    v8::PropertyAttribute attribute) {
   i::Isolate* isolate = i::Isolate::Current();
@@ -845,7 +845,7 @@ void Template::Set(v8::Handle<String> name,
 
 
 void Template::SetAccessorProperty(
-    v8::Local<v8::String> name,
+    v8::Local<v8::Name> name,
     v8::Local<FunctionTemplate> getter,
     v8::Local<FunctionTemplate> setter,
     v8::PropertyAttribute attribute,
@@ -1156,7 +1156,7 @@ void FunctionTemplate::SetCallHandler(FunctionCallback callback,
 
 static i::Handle<i::AccessorInfo> SetAccessorInfoProperties(
     i::Handle<i::AccessorInfo> obj,
-    v8::Handle<String> name,
+    v8::Handle<Name> name,
     v8::AccessControl settings,
     v8::PropertyAttribute attributes,
     v8::Handle<AccessorSignature> signature) {
@@ -1173,7 +1173,7 @@ static i::Handle<i::AccessorInfo> SetAccessorInfoProperties(
 
 template<typename Getter, typename Setter>
 static i::Handle<i::AccessorInfo> MakeAccessorInfo(
-    v8::Handle<String> name,
+    v8::Handle<Name> name,
     Getter getter,
     Setter setter,
     v8::Handle<Value> data,
@@ -1194,7 +1194,7 @@ static i::Handle<i::AccessorInfo> MakeAccessorInfo(
 
 
 static i::Handle<i::AccessorInfo> MakeAccessorInfo(
-    v8::Handle<String> name,
+    v8::Handle<Name> name,
     v8::Handle<v8::DeclaredAccessorDescriptor> descriptor,
     void* setter_ignored,
     void* data_ignored,
@@ -1345,10 +1345,10 @@ static inline i::Handle<i::TemplateInfo> GetTemplateInfo(
 }
 
 
-template<typename Setter, typename Getter, typename Data, typename Template>
+template<typename Getter, typename Setter, typename Data, typename Template>
 static bool TemplateSetAccessor(
     Template* template_obj,
-    v8::Local<String> name,
+    v8::Local<Name> name,
     Getter getter,
     Setter setter,
     Data data,
@@ -1368,7 +1368,7 @@ static bool TemplateSetAccessor(
 
 
 bool Template::SetDeclaredAccessor(
-    Local<String> name,
+    Local<Name> name,
     Local<DeclaredAccessorDescriptor> descriptor,
     PropertyAttribute attribute,
     Local<AccessorSignature> signature,
@@ -1391,9 +1391,33 @@ void Template::SetNativeDataProperty(v8::Local<String> name,
 }
 
 
+void Template::SetNativeDataProperty(v8::Local<Name> name,
+                                     AccessorNameGetterCallback getter,
+                                     AccessorNameSetterCallback setter,
+                                     v8::Handle<Value> data,
+                                     PropertyAttribute attribute,
+                                     v8::Local<AccessorSignature> signature,
+                                     AccessControl settings) {
+  TemplateSetAccessor(
+      this, name, getter, setter, data, settings, attribute, signature);
+}
+
+
 void ObjectTemplate::SetAccessor(v8::Handle<String> name,
                                  AccessorGetterCallback getter,
                                  AccessorSetterCallback setter,
+                                 v8::Handle<Value> data,
+                                 AccessControl settings,
+                                 PropertyAttribute attribute,
+                                 v8::Handle<AccessorSignature> signature) {
+  TemplateSetAccessor(
+      this, name, getter, setter, data, settings, attribute, signature);
+}
+
+
+void ObjectTemplate::SetAccessor(v8::Handle<Name> name,
+                                 AccessorNameGetterCallback getter,
+                                 AccessorNameSetterCallback setter,
                                  v8::Handle<Value> data,
                                  AccessControl settings,
                                  PropertyAttribute attribute,
@@ -2324,6 +2348,11 @@ bool Value::IsFunction() const {
 }
 
 
+bool Value::IsName() const {
+  return Utils::OpenHandle(this)->IsName();
+}
+
+
 bool Value::FullIsString() const {
   bool result = Utils::OpenHandle(this)->IsString();
   DCHECK_EQ(result, QuickIsString());
@@ -2380,6 +2409,14 @@ bool Value::IsObject() const {
 
 bool Value::IsNumber() const {
   return Utils::OpenHandle(this)->IsNumber();
+}
+
+
+bool Value::IsArgumentsObject() const {
+  i::Handle<i::Object> obj = Utils::OpenHandle(this);
+  if (!obj->IsHeapObject()) return false;
+  i::Isolate* isolate = i::HeapObject::cast(*obj)->GetIsolate();
+  return obj->HasSpecificClassOf(isolate->heap()->Arguments_string());
 }
 
 
@@ -2629,6 +2666,14 @@ void v8::Function::CheckCast(Value* that) {
   Utils::ApiCheck(obj->IsJSFunction(),
                   "v8::Function::Cast()",
                   "Could not convert to function");
+}
+
+
+void v8::Name::CheckCast(v8::Value* that) {
+  i::Handle<i::Object> obj = Utils::OpenHandle(that);
+  Utils::ApiCheck(obj->IsName(),
+                  "v8::Name::Cast()",
+                  "Could not convert to name");
 }
 
 
@@ -3296,7 +3341,8 @@ Local<String> v8::Object::ObjectProtoToString() {
     return v8::String::NewFromUtf8(isolate, "[object ]");
   } else {
     i::Handle<i::String> class_name = i::Handle<i::String>::cast(name);
-    if (class_name->IsOneByteEqualTo(STATIC_ASCII_VECTOR("Arguments"))) {
+    if (i::String::Equals(class_name,
+                          i_isolate->factory()->Arguments_string())) {
       return v8::String::NewFromUtf8(isolate, "[object Object]");
     } else {
       const char* prefix = "[object ";
@@ -3414,11 +3460,11 @@ bool v8::Object::Has(uint32_t index) {
 }
 
 
-template<typename Setter, typename Getter, typename Data>
+template<typename Getter, typename Setter, typename Data>
 static inline bool ObjectSetAccessor(Object* obj,
-                                     Handle<String> name,
-                                     Setter getter,
-                                     Getter setter,
+                                     Handle<Name> name,
+                                     Getter getter,
+                                     Setter setter,
                                      Data data,
                                      AccessControl settings,
                                      PropertyAttribute attributes) {
@@ -3453,7 +3499,18 @@ bool Object::SetAccessor(Handle<String> name,
 }
 
 
-bool Object::SetDeclaredAccessor(Local<String> name,
+bool Object::SetAccessor(Handle<Name> name,
+                         AccessorNameGetterCallback getter,
+                         AccessorNameSetterCallback setter,
+                         v8::Handle<Value> data,
+                         AccessControl settings,
+                         PropertyAttribute attributes) {
+  return ObjectSetAccessor(
+      this, name, getter, setter, data, settings, attributes);
+}
+
+
+bool Object::SetDeclaredAccessor(Local<Name> name,
                                  Local<DeclaredAccessorDescriptor> descriptor,
                                  PropertyAttribute attributes,
                                  AccessControl settings) {
@@ -3463,7 +3520,7 @@ bool Object::SetDeclaredAccessor(Local<String> name,
 }
 
 
-void Object::SetAccessorProperty(Local<String> name,
+void Object::SetAccessorProperty(Local<Name> name,
                                  Local<Function> getter,
                                  Handle<Function> setter,
                                  PropertyAttribute attribute,
@@ -3555,26 +3612,15 @@ bool v8::Object::HasIndexedLookupInterceptor() {
 }
 
 
-static Local<Value> GetPropertyByLookup(i::Isolate* isolate,
-                                        i::Handle<i::JSObject> receiver,
-                                        i::Handle<i::String> name,
-                                        i::LookupResult* lookup) {
-  if (!lookup->IsProperty()) {
-    // No real property was found.
-    return Local<Value>();
-  }
-
-  // If the property being looked up is a callback, it can throw
-  // an exception.
-  EXCEPTION_PREAMBLE(isolate);
-  i::LookupIterator it(
-      receiver, name, i::Handle<i::JSReceiver>(lookup->holder(), isolate),
-      i::LookupIterator::SKIP_INTERCEPTOR);
+static Local<Value> GetPropertyByLookup(i::LookupIterator* it) {
+  // If the property being looked up is a callback, it can throw an exception.
+  EXCEPTION_PREAMBLE(it->isolate());
   i::Handle<i::Object> result;
-  has_pending_exception = !i::Object::GetProperty(&it).ToHandle(&result);
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<Value>());
+  has_pending_exception = !i::Object::GetProperty(it).ToHandle(&result);
+  EXCEPTION_BAILOUT_CHECK(it->isolate(), Local<Value>());
 
-  return Utils::ToLocal(result);
+  if (it->IsFound()) return Utils::ToLocal(result);
+  return Local<Value>();
 }
 
 
@@ -3587,9 +3633,11 @@ Local<Value> v8::Object::GetRealNamedPropertyInPrototypeChain(
   ENTER_V8(isolate);
   i::Handle<i::JSObject> self_obj = Utils::OpenHandle(this);
   i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
-  i::LookupResult lookup(isolate);
-  self_obj->LookupRealNamedPropertyInPrototypes(key_obj, &lookup);
-  return GetPropertyByLookup(isolate, self_obj, key_obj, &lookup);
+  i::PrototypeIterator iter(isolate, self_obj);
+  if (iter.IsAtEnd()) return Local<Value>();
+  i::LookupIterator it(i::PrototypeIterator::GetCurrent(iter), key_obj,
+                       i::LookupIterator::CHECK_DERIVED_PROPERTY);
+  return GetPropertyByLookup(&it);
 }
 
 
@@ -3600,9 +3648,9 @@ Local<Value> v8::Object::GetRealNamedProperty(Handle<String> key) {
   ENTER_V8(isolate);
   i::Handle<i::JSObject> self_obj = Utils::OpenHandle(this);
   i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
-  i::LookupResult lookup(isolate);
-  self_obj->LookupRealNamedProperty(key_obj, &lookup);
-  return GetPropertyByLookup(isolate, self_obj, key_obj, &lookup);
+  i::LookupIterator it(self_obj, key_obj,
+                       i::LookupIterator::CHECK_DERIVED_PROPERTY);
+  return GetPropertyByLookup(&it);
 }
 
 
@@ -4056,15 +4104,14 @@ Handle<Value> Function::GetDisplayName() const {
   i::Handle<i::String> property_name =
       isolate->factory()->InternalizeOneByteString(
           STATIC_ASCII_VECTOR("displayName"));
-  i::LookupResult lookup(isolate);
-  func->LookupRealNamedProperty(property_name, &lookup);
-  if (lookup.IsFound()) {
-    i::Object* value = lookup.GetLazyValue();
-    if (value && value->IsString()) {
-      i::String* name = i::String::cast(value);
-      if (name->length() > 0) return Utils::ToLocal(i::Handle<i::String>(name));
-    }
+
+  i::Handle<i::Object> value =
+      i::JSObject::GetDataProperty(func, property_name);
+  if (value->IsString()) {
+    i::Handle<i::String> name = i::Handle<i::String>::cast(value);
+    if (name->length() > 0) return Utils::ToLocal(name);
   }
+
   return ToApiHandle<Primitive>(isolate->factory()->undefined_value());
 }
 
@@ -4290,9 +4337,7 @@ class Utf8LengthHelper : public i::AllStatic {
 
   class Visitor {
    public:
-    inline explicit Visitor()
-        : utf8_length_(0),
-          state_(kInitialState) {}
+    Visitor() : utf8_length_(0), state_(kInitialState) {}
 
     void VisitOneByteString(const uint8_t* chars, int length) {
       int utf8_length = 0;
@@ -6145,43 +6190,57 @@ Local<Symbol> v8::Symbol::New(Isolate* isolate, Local<String> name) {
 }
 
 
-Local<Symbol> v8::Symbol::For(Isolate* isolate, Local<String> name) {
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  i::Handle<i::String> i_name = Utils::OpenHandle(*name);
-  i::Handle<i::JSObject> registry = i_isolate->GetSymbolRegistry();
-  i::Handle<i::String> part = i_isolate->factory()->for_string();
+static i::Handle<i::Symbol> SymbolFor(i::Isolate* isolate,
+                                      i::Handle<i::String> name,
+                                      i::Handle<i::String> part) {
+  i::Handle<i::JSObject> registry = isolate->GetSymbolRegistry();
   i::Handle<i::JSObject> symbols =
       i::Handle<i::JSObject>::cast(
           i::Object::GetPropertyOrElement(registry, part).ToHandleChecked());
   i::Handle<i::Object> symbol =
-      i::Object::GetPropertyOrElement(symbols, i_name).ToHandleChecked();
+      i::Object::GetPropertyOrElement(symbols, name).ToHandleChecked();
   if (!symbol->IsSymbol()) {
     DCHECK(symbol->IsUndefined());
-    symbol = i_isolate->factory()->NewSymbol();
-    i::Handle<i::Symbol>::cast(symbol)->set_name(*i_name);
-    i::JSObject::SetProperty(symbols, i_name, symbol, i::STRICT).Assert();
+    symbol = isolate->factory()->NewSymbol();
+    i::Handle<i::Symbol>::cast(symbol)->set_name(*name);
+    i::JSObject::SetProperty(symbols, name, symbol, i::STRICT).Assert();
   }
-  return Utils::ToLocal(i::Handle<i::Symbol>::cast(symbol));
+  return i::Handle<i::Symbol>::cast(symbol);
+}
+
+
+Local<Symbol> v8::Symbol::For(Isolate* isolate, Local<String> name) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i::Handle<i::String> i_name = Utils::OpenHandle(*name);
+  i::Handle<i::String> part = i_isolate->factory()->for_string();
+  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part));
 }
 
 
 Local<Symbol> v8::Symbol::ForApi(Isolate* isolate, Local<String> name) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Handle<i::String> i_name = Utils::OpenHandle(*name);
-  i::Handle<i::JSObject> registry = i_isolate->GetSymbolRegistry();
   i::Handle<i::String> part = i_isolate->factory()->for_api_string();
-  i::Handle<i::JSObject> symbols =
-      i::Handle<i::JSObject>::cast(
-          i::Object::GetPropertyOrElement(registry, part).ToHandleChecked());
-  i::Handle<i::Object> symbol =
-      i::Object::GetPropertyOrElement(symbols, i_name).ToHandleChecked();
-  if (!symbol->IsSymbol()) {
-    DCHECK(symbol->IsUndefined());
-    symbol = i_isolate->factory()->NewSymbol();
-    i::Handle<i::Symbol>::cast(symbol)->set_name(*i_name);
-    i::JSObject::SetProperty(symbols, i_name, symbol, i::STRICT).Assert();
-  }
-  return Utils::ToLocal(i::Handle<i::Symbol>::cast(symbol));
+  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part));
+}
+
+
+static Local<Symbol> GetWellKnownSymbol(Isolate* isolate, const char* name) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i::Handle<i::String> i_name =
+      Utils::OpenHandle(*String::NewFromUtf8(isolate, name));
+  i::Handle<i::String> part = i_isolate->factory()->for_intern_string();
+  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part));
+}
+
+
+Local<Symbol> v8::Symbol::GetIterator(Isolate* isolate) {
+  return GetWellKnownSymbol(isolate, "Symbol.iterator");
+}
+
+
+Local<Symbol> v8::Symbol::GetUnscopables(Isolate* isolate) {
+  return GetWellKnownSymbol(isolate, "Symbol.unscopables");
 }
 
 
@@ -6898,6 +6957,12 @@ void Debug::DebugBreak(Isolate* isolate) {
 void Debug::CancelDebugBreak(Isolate* isolate) {
   i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
   internal_isolate->stack_guard()->ClearDebugBreak();
+}
+
+
+bool Debug::CheckDebugBreak(Isolate* isolate) {
+  i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return internal_isolate->stack_guard()->CheckDebugBreak();
 }
 
 
@@ -7620,9 +7685,9 @@ void DeferredHandles::Iterate(ObjectVisitor* v) {
 
 
 void InvokeAccessorGetterCallback(
-    v8::Local<v8::String> property,
+    v8::Local<v8::Name> property,
     const v8::PropertyCallbackInfo<v8::Value>& info,
-    v8::AccessorGetterCallback getter) {
+    v8::AccessorNameGetterCallback getter) {
   // Leaving JavaScript.
   Isolate* isolate = reinterpret_cast<Isolate*>(info.GetIsolate());
   Address getter_address = reinterpret_cast<Address>(reinterpret_cast<intptr_t>(

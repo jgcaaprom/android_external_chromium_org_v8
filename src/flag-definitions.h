@@ -160,6 +160,7 @@ DEFINE_BOOL(harmony_numeric_literals, false,
 DEFINE_BOOL(harmony_strings, false, "enable harmony string")
 DEFINE_BOOL(harmony_arrays, false, "enable harmony arrays")
 DEFINE_BOOL(harmony_arrow_functions, false, "enable harmony arrow functions")
+DEFINE_BOOL(harmony_classes, false, "enable harmony classes")
 DEFINE_BOOL(harmony, false, "enable all harmony features (except proxies)")
 
 DEFINE_IMPLICATION(harmony, harmony_scoping)
@@ -171,6 +172,7 @@ DEFINE_IMPLICATION(harmony, harmony_numeric_literals)
 DEFINE_IMPLICATION(harmony, harmony_strings)
 DEFINE_IMPLICATION(harmony, harmony_arrays)
 DEFINE_IMPLICATION(harmony, harmony_arrow_functions)
+DEFINE_IMPLICATION(harmony, harmony_classes)
 DEFINE_IMPLICATION(harmony_modules, harmony_scoping)
 
 DEFINE_IMPLICATION(harmony, es_staging)
@@ -336,6 +338,8 @@ DEFINE_BOOL(turbo_source_positions, false,
 DEFINE_BOOL(context_specialization, true,
             "enable context specialization in TurboFan")
 DEFINE_BOOL(turbo_deoptimization, false, "enable deoptimization in TurboFan")
+DEFINE_BOOL(turbo_inlining, false, "enable inlining in TurboFan")
+DEFINE_BOOL(trace_turbo_inlining, false, "trace TurboFan inlining")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")

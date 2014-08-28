@@ -47,6 +47,7 @@ LOCAL_SRC_FILES := \
 	v8/src/codegen.cc \
 	v8/src/compilation-cache.cc \
 	v8/src/compiler/ast-graph-builder.cc \
+	v8/src/compiler/change-lowering.cc \
 	v8/src/compiler/code-generator.cc \
 	v8/src/compiler/control-builders.cc \
 	v8/src/compiler/gap-resolver.cc \
@@ -60,10 +61,11 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/js-context-specialization.cc \
 	v8/src/compiler/js-generic-lowering.cc \
 	v8/src/compiler/js-graph.cc \
+	v8/src/compiler/js-inlining.cc \
 	v8/src/compiler/js-typed-lowering.cc \
 	v8/src/compiler/linkage.cc \
-	v8/src/compiler/lowering-builder.cc \
 	v8/src/compiler/machine-operator-reducer.cc \
+	v8/src/compiler/machine-type.cc \
 	v8/src/compiler/node-cache.cc \
 	v8/src/compiler/node.cc \
 	v8/src/compiler/pipeline.cc \
@@ -110,6 +112,7 @@ LOCAL_SRC_FILES := \
 	v8/src/handles.cc \
 	v8/src/heap-profiler.cc \
 	v8/src/heap-snapshot-generator.cc \
+	v8/src/heap/gc-idle-time-handler.cc \
 	v8/src/heap/gc-tracer.cc \
 	v8/src/heap/heap.cc \
 	v8/src/heap/incremental-marking.cc \
@@ -289,6 +292,7 @@ MY_DEFS_Debug := \
 	'-DCAN_USE_FPU_INSTRUCTIONS' \
 	'-D__mips_hard_float=1' \
 	'-D_MIPS_ARCH_MIPS32R2' \
+	'-DFPU_MODE_FP32' \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
@@ -407,6 +411,7 @@ MY_DEFS_Release := \
 	'-DCAN_USE_FPU_INSTRUCTIONS' \
 	'-D__mips_hard_float=1' \
 	'-D_MIPS_ARCH_MIPS32R2' \
+	'-DFPU_MODE_FP32' \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \

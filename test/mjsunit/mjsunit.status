@@ -51,6 +51,10 @@
   # Issue 3389: deopt_every_n_garbage_collections is unsafe
   'regress/regress-2653': [SKIP],
 
+  # This test relies on --noopt-safe-uint32-operations, which is broken. See
+  # issue 3487 for details.
+  'compiler/shift-shr': [SKIP],
+
   ##############################################################################
   # TurboFan compiler failures.
 
@@ -127,6 +131,7 @@
   'es6/debug-promises/throw-uncaught-all': [PASS, NO_VARIANTS],
   'es6/debug-promises/throw-uncaught-uncaught': [PASS, NO_VARIANTS],
   'es6/debug-promises/reject-uncaught-late': [PASS, NO_VARIANTS],
+  'es6/debug-promises/throw-caught-by-default-reject-handler': [PASS, NO_VARIANTS],
   'harmony/debug-blockscopes': [PASS, NO_VARIANTS],
   'harmony/generators-debug-scopes': [PASS, NO_VARIANTS],
   'regress/regress-1081309': [PASS, NO_VARIANTS],
@@ -299,6 +304,9 @@
 ##############################################################################
 ['arch == arm64 or arch == android_arm64', {
 
+  # arm64 TF timeout.
+  'regress/regress-1257': [PASS, TIMEOUT],
+
   # Requires bigger stack size in the Genesis and if stack size is increased,
   # the test requires too much time to run.  However, the problem test covers
   # should be platform-independent.
@@ -345,7 +353,7 @@
   'bit-not': [PASS, SLOW],
   'compiler/alloc-number': [PASS, SLOW],
   'compiler/osr-assert': [PASS, SLOW],
-  'compiler/osr-warm': [PASS, SLOW],
+  'compiler/osr-warm': [PASS, TIMEOUT, SLOW],
   'compiler/osr-with-args': [PASS, SLOW],
   'debug-scopes': [PASS, SLOW],
   'generated-transition-stub': [PASS, SLOW],

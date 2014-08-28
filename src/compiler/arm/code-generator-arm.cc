@@ -158,6 +158,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
+    case kArchTruncateDoubleToI:
+      __ TruncateDoubleToI(i.OutputRegister(), i.InputDoubleRegister(0));
+      DCHECK_EQ(LeaveCC, i.OutputSBit());
+      break;
     case kArmAdd:
       __ add(i.OutputRegister(), i.InputRegister(0), i.InputOperand2(1),
              i.OutputSBit());
@@ -198,8 +202,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kArmMov:
-      __ Move(i.OutputRegister(), i.InputOperand2(0));
-      DCHECK_EQ(LeaveCC, i.OutputSBit());
+      __ Move(i.OutputRegister(), i.InputOperand2(0), i.OutputSBit());
       break;
     case kArmMvn:
       __ mvn(i.OutputRegister(), i.InputOperand2(0), i.OutputSBit());
@@ -665,12 +668,10 @@ void CodeGenerator::AssembleReturn() {
         __ ldm(ia_w, sp, saves);
       }
     }
-    __ mov(sp, fp);
-    __ ldm(ia_w, sp, fp.bit() | lr.bit());
+    __ LeaveFrame(StackFrame::MANUAL);
     __ Ret();
   } else {
-    __ mov(sp, fp);
-    __ ldm(ia_w, sp, fp.bit() | lr.bit());
+    __ LeaveFrame(StackFrame::MANUAL);
     int pop_count =
         descriptor->IsJSFunctionCall() ? descriptor->ParameterCount() : 0;
     __ Drop(pop_count);
@@ -831,16 +832,6 @@ void CodeGenerator::AddNopForSmiCodeInlining() {
   // On 32-bit ARM we do not insert nops for inlined Smi code.
   UNREACHABLE();
 }
-
-#ifdef DEBUG
-
-// Checks whether the code between start_pc and end_pc is a no-op.
-bool CodeGenerator::IsNopForSmiCodeInlining(Handle<Code> code, int start_pc,
-                                            int end_pc) {
-  return false;
-}
-
-#endif  // DEBUG
 
 #undef __
 }

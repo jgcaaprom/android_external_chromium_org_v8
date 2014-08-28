@@ -503,18 +503,14 @@ RUNTIME_FUNCTION(StoreCallbackProperty) {
   DCHECK(callback->IsCompatibleReceiver(*receiver));
 
   Address setter_address = v8::ToCData<Address>(callback->setter());
-  v8::AccessorSetterCallback fun =
-      FUNCTION_CAST<v8::AccessorSetterCallback>(setter_address);
+  v8::AccessorNameSetterCallback fun =
+      FUNCTION_CAST<v8::AccessorNameSetterCallback>(setter_address);
   DCHECK(fun != NULL);
-
-  // TODO(rossberg): Support symbols in the API.
-  if (name->IsSymbol()) return *value;
-  Handle<String> str = Handle<String>::cast(name);
 
   LOG(isolate, ApiNamedPropertyAccess("store", *receiver, *name));
   PropertyCallbackArguments custom_args(isolate, callback->data(), *receiver,
                                         *holder);
-  custom_args.Call(fun, v8::Utils::ToLocal(str), v8::Utils::ToLocal(value));
+  custom_args.Call(fun, v8::Utils::ToLocal(name), v8::Utils::ToLocal(value));
   RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
   return *value;
 }
@@ -893,43 +889,62 @@ Handle<Code> NamedLoadHandlerCompiler::CompileLoadCallback(
 
 
 Handle<Code> NamedLoadHandlerCompiler::CompileLoadInterceptor(
-    Handle<Name> name) {
-  // Perform a lookup after the interceptor.
-  LookupResult lookup(isolate());
-  holder()->LookupOwnRealNamedProperty(name, &lookup);
-  if (!lookup.IsFound()) {
-    PrototypeIterator iter(holder()->GetIsolate(), holder());
-    if (!iter.IsAtEnd()) {
-      PrototypeIterator::GetCurrent(iter)->Lookup(name, &lookup);
+    LookupIterator* it, Handle<Name> name) {
+  // So far the most popular follow ups for interceptor loads are FIELD and
+  // ExecutableAccessorInfo, so inline only them. Other cases may be added
+  // later.
+  bool inline_followup = it->state() == LookupIterator::PROPERTY;
+  if (inline_followup) {
+    switch (it->property_kind()) {
+      case LookupIterator::DATA:
+        inline_followup = it->property_details().type() == FIELD;
+        break;
+      case LookupIterator::ACCESSOR: {
+        Handle<Object> accessors = it->GetAccessors();
+        inline_followup = accessors->IsExecutableAccessorInfo();
+        if (!inline_followup) break;
+        Handle<ExecutableAccessorInfo> info =
+            Handle<ExecutableAccessorInfo>::cast(accessors);
+        inline_followup = info->getter() != NULL &&
+                          ExecutableAccessorInfo::IsCompatibleReceiverType(
+                              isolate(), info, type());
+      }
     }
   }
 
   Register reg = Frontend(receiver(), name);
-  // TODO(368): Compile in the whole chain: all the interceptors in
-  // prototypes and ultimate answer.
-  GenerateLoadInterceptor(reg, &lookup, name);
+  if (inline_followup) {
+    // TODO(368): Compile in the whole chain: all the interceptors in
+    // prototypes and ultimate answer.
+    GenerateLoadInterceptorWithFollowup(it, reg);
+  } else {
+    GenerateLoadInterceptor(reg);
+  }
   return GetCode(kind(), Code::FAST, name);
 }
 
 
 void NamedLoadHandlerCompiler::GenerateLoadPostInterceptor(
-    Register interceptor_reg, Handle<Name> name, LookupResult* lookup) {
-  Handle<JSObject> real_named_property_holder(lookup->holder());
+    LookupIterator* it, Register interceptor_reg) {
+  Handle<JSObject> real_named_property_holder(it->GetHolder<JSObject>());
 
   set_type_for_object(holder());
   set_holder(real_named_property_holder);
-  Register reg = Frontend(interceptor_reg, name);
+  Register reg = Frontend(interceptor_reg, it->name());
 
-  if (lookup->IsField()) {
-    __ Move(receiver(), reg);
-    LoadFieldStub stub(isolate(), lookup->GetFieldIndex());
-    GenerateTailCall(masm(), stub.GetCode());
-  } else {
-    DCHECK(lookup->type() == CALLBACKS);
-    Handle<ExecutableAccessorInfo> callback(
-        ExecutableAccessorInfo::cast(lookup->GetCallbackObject()));
-    DCHECK(callback->getter() != NULL);
-    GenerateLoadCallback(reg, callback);
+  switch (it->property_kind()) {
+    case LookupIterator::DATA: {
+      DCHECK_EQ(FIELD, it->property_details().type());
+      __ Move(receiver(), reg);
+      LoadFieldStub stub(isolate(), it->GetFieldIndex());
+      GenerateTailCall(masm(), stub.GetCode());
+      break;
+    }
+    case LookupIterator::ACCESSOR:
+      Handle<ExecutableAccessorInfo> info =
+          Handle<ExecutableAccessorInfo>::cast(it->GetAccessors());
+      DCHECK_NE(NULL, info->getter());
+      GenerateLoadCallback(reg, info);
   }
 }
 
@@ -1171,18 +1186,6 @@ Handle<Code> PropertyICCompiler::CompileKeyedStorePolymorphic(
 void ElementHandlerCompiler::GenerateStoreDictionaryElement(
     MacroAssembler* masm) {
   KeyedStoreIC::GenerateSlow(masm);
-}
-
-
-CallOptimization::CallOptimization(LookupResult* lookup) {
-  if (lookup->IsFound() &&
-      lookup->IsCacheable() &&
-      lookup->IsConstantFunction()) {
-    // We only optimize constant function calls.
-    Initialize(Handle<JSFunction>(lookup->GetConstantFunction()));
-  } else {
-    Initialize(Handle<JSFunction>::null());
-  }
 }
 
 

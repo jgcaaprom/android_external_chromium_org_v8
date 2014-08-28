@@ -120,7 +120,7 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
         holder_(NULL),
         transition_(NULL),
         cacheable_(true),
-        details_(NONE, NONEXISTENT, Representation::None()) {
+        details_(NONE, NORMAL, Representation::None()) {
     isolate->set_top_lookup_result(this);
   }
 
@@ -146,16 +146,18 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
       case FIELD:
         return value->FitsRepresentation(representation()) &&
             GetFieldType()->NowContains(value);
-      case CONSTANT:
-        DCHECK(GetConstant() != *value ||
+      case CONSTANT: {
+        Map* map =
+            lookup_type_ == DESCRIPTOR_TYPE ? holder_->map() : transition_;
+        Object* constant = GetConstantFromMap(map);
+        DCHECK(constant != *value ||
                value->FitsRepresentation(representation()));
-        return GetConstant() == *value;
+        return constant == *value;
+      }
       case CALLBACKS:
       case HANDLER:
       case INTERCEPTOR:
         return true;
-      case NONEXISTENT:
-        UNREACHABLE();
     }
     UNREACHABLE();
     return true;
@@ -194,7 +196,7 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
 
   void NotFound() {
     lookup_type_ = NOT_FOUND;
-    details_ = PropertyDetails(NONE, NONEXISTENT, Representation::None());
+    details_ = PropertyDetails(NONE, NORMAL, Representation::None());
     holder_ = NULL;
     transition_ = NULL;
   }
@@ -216,13 +218,11 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
 
   Representation representation() const {
     DCHECK(IsFound());
-    DCHECK(details_.type() != NONEXISTENT);
     return details_.representation();
   }
 
   PropertyAttributes GetAttributes() const {
     DCHECK(IsFound());
-    DCHECK(details_.type() != NONEXISTENT);
     return details_.attributes();
   }
 
@@ -243,7 +243,6 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
 
   bool IsReadOnly() const {
     DCHECK(IsFound());
-    DCHECK(details_.type() != NONEXISTENT);
     return details_.IsReadOnly();
   }
 
@@ -253,8 +252,7 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
   }
 
   bool IsNormal() const {
-    DCHECK(!(details_.type() == NORMAL && !IsFound()));
-    return IsDescriptorOrDictionary() && type() == NORMAL;
+    return IsFound() && IsDescriptorOrDictionary() && type() == NORMAL;
   }
 
   bool IsConstant() const {
@@ -262,11 +260,7 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
     return IsDescriptorOrDictionary() && type() == CONSTANT;
   }
 
-  bool IsConstantFunction() const {
-    return IsConstant() && GetConstant()->IsJSFunction();
-  }
-
-  bool IsDontDelete() const { return details_.IsDontDelete(); }
+  bool IsConfigurable() const { return details_.IsConfigurable(); }
   bool IsDontEnum() const { return details_.IsDontEnum(); }
   bool IsFound() const { return lookup_type_ != NOT_FOUND; }
   bool IsDescriptorOrDictionary() const {
@@ -281,75 +275,8 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
     return IsFound() && !IsTransition();
   }
 
-  bool IsDataProperty() const {
-    switch (lookup_type_) {
-      case NOT_FOUND:
-      case TRANSITION_TYPE:
-      case HANDLER_TYPE:
-      case INTERCEPTOR_TYPE:
-        return false;
-
-      case DESCRIPTOR_TYPE:
-      case DICTIONARY_TYPE:
-        switch (type()) {
-          case FIELD:
-          case NORMAL:
-          case CONSTANT:
-            return true;
-          case CALLBACKS: {
-            Object* callback = GetCallbackObject();
-            DCHECK(!callback->IsForeign());
-            return callback->IsAccessorInfo();
-          }
-          case HANDLER:
-          case INTERCEPTOR:
-          case NONEXISTENT:
-            UNREACHABLE();
-            return false;
-        }
-    }
-    UNREACHABLE();
-    return false;
-  }
-
   bool IsCacheable() const { return cacheable_; }
   void DisallowCaching() { cacheable_ = false; }
-
-  Object* GetLazyValue() const {
-    switch (lookup_type_) {
-      case NOT_FOUND:
-      case TRANSITION_TYPE:
-      case HANDLER_TYPE:
-      case INTERCEPTOR_TYPE:
-        return isolate()->heap()->the_hole_value();
-
-      case DESCRIPTOR_TYPE:
-      case DICTIONARY_TYPE:
-        switch (type()) {
-          case FIELD:
-            return holder()->RawFastPropertyAt(GetFieldIndex());
-          case NORMAL: {
-            Object* value = holder()->property_dictionary()->ValueAt(
-                GetDictionaryEntry());
-            if (holder()->IsGlobalObject()) {
-              value = PropertyCell::cast(value)->value();
-            }
-            return value;
-          }
-          case CONSTANT:
-            return GetConstant();
-          case CALLBACKS:
-            return isolate()->heap()->the_hole_value();
-          case HANDLER:
-          case INTERCEPTOR:
-          case NONEXISTENT:
-            UNREACHABLE();
-            return NULL;
-        }
-    }
-    UNREACHABLE();
-    return NULL;
-  }
 
   Map* GetTransitionTarget() const {
     DCHECK(IsTransition());
@@ -384,40 +311,9 @@ class LookupResult V8_FINAL BASE_EMBEDDED {
     return number_;
   }
 
-  JSFunction* GetConstantFunction() const {
-    DCHECK(type() == CONSTANT);
-    return JSFunction::cast(GetValue());
-  }
-
   Object* GetConstantFromMap(Map* map) const {
     DCHECK(type() == CONSTANT);
     return GetValueFromMap(map);
-  }
-
-  JSFunction* GetConstantFunctionFromMap(Map* map) const {
-    return JSFunction::cast(GetConstantFromMap(map));
-  }
-
-  Object* GetConstant() const {
-    DCHECK(type() == CONSTANT);
-    return GetValue();
-  }
-
-  Object* GetCallbackObject() const {
-    DCHECK(!IsTransition());
-    DCHECK(type() == CALLBACKS);
-    return GetValue();
-  }
-
-  Object* GetValue() const {
-    if (lookup_type_ == DESCRIPTOR_TYPE) {
-      return GetValueFromMap(holder()->map());
-    } else if (lookup_type_ == TRANSITION_TYPE) {
-      return GetValueFromMap(transition_);
-    }
-    // In the dictionary case, the data is held in the value field.
-    DCHECK(lookup_type_ == DICTIONARY_TYPE);
-    return holder()->GetNormalizedProperty(this);
   }
 
   Object* GetValueFromMap(Map* map) const {

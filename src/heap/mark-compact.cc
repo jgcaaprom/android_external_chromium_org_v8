@@ -5,6 +5,7 @@
 #include "src/v8.h"
 
 #include "src/base/atomicops.h"
+#include "src/base/bits.h"
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
 #include "src/cpu-profiler.h"
@@ -1926,7 +1927,7 @@ static void DiscoverGreyObjectsOnPage(MarkingDeque* marking_deque,
 
     int offset = 0;
     while (grey_objects != 0) {
-      int trailing_zeros = CompilerIntrinsics::CountTrailingZeros(grey_objects);
+      int trailing_zeros = base::bits::CountTrailingZeros32(grey_objects);
       grey_objects >>= trailing_zeros;
       offset += trailing_zeros;
       MarkBit markbit(cell, 1 << offset, false);
@@ -1965,7 +1966,7 @@ int MarkCompactCollector::DiscoverAndEvacuateBlackObjectsOnPage(
 
     int offset = 0;
     while (current_cell != 0) {
-      int trailing_zeros = CompilerIntrinsics::CountTrailingZeros(current_cell);
+      int trailing_zeros = base::bits::CountTrailingZeros32(current_cell);
       current_cell >>= trailing_zeros;
       offset += trailing_zeros;
       Address address = cell_base + offset * kPointerSize;
@@ -2724,7 +2725,8 @@ void MarkCompactCollector::ClearDependentCode(DependentCode* entries) {
     DCHECK(entries->is_code_at(i));
     Code* code = entries->code_at(i);
     if (IsMarked(code) && !code->marked_for_deoptimization()) {
-      code->set_marked_for_deoptimization(true);
+      DependentCode::SetMarkedForDeoptimization(
+          code, static_cast<DependentCode::DependencyGroup>(g));
       code->InvalidateEmbeddedObjects();
       have_code_to_deoptimize_ = true;
     }
