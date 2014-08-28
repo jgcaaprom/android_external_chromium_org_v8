@@ -52,6 +52,13 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-Wno-format \
+	-Wheader-hygiene \
+	-Wno-char-subscripts \
+	-Wno-unneeded-internal-declaration \
+	-Wno-covered-switch-default \
+	-Wstring-conversion \
+	-Wno-c++11-narrowing \
+	-Wno-deprecated-register \
 	-m32 \
 	-Os \
 	-g \
@@ -109,7 +116,8 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated
+	-Wno-deprecated \
+	-std=gnu++11
 
 
 # Flags passed to both C and C++ files.
@@ -125,6 +133,13 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-Wno-format \
+	-Wheader-hygiene \
+	-Wno-char-subscripts \
+	-Wno-unneeded-internal-declaration \
+	-Wno-covered-switch-default \
+	-Wstring-conversion \
+	-Wno-c++11-narrowing \
+	-Wno-deprecated-register \
 	-m32 \
 	-fno-ident \
 	-fdata-sections \
@@ -179,7 +194,8 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated
+	-Wno-deprecated \
+	-std=gnu++11
 
 
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
