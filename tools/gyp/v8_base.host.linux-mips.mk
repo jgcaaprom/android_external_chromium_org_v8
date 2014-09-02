@@ -153,6 +153,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/ic.cc \
 	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
+	v8/src/interface-descriptors.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
 	v8/src/jsregexp.cc \
@@ -219,6 +220,7 @@ LOCAL_SRC_FILES := \
 	v8/src/mips/disasm-mips.cc \
 	v8/src/mips/frames-mips.cc \
 	v8/src/mips/full-codegen-mips.cc \
+	v8/src/mips/interface-descriptors-mips.cc \
 	v8/src/mips/lithium-codegen-mips.cc \
 	v8/src/mips/lithium-gap-resolver-mips.cc \
 	v8/src/mips/lithium-mips.cc \

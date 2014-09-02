@@ -154,6 +154,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/ic.cc \
 	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
+	v8/src/interface-descriptors.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
 	v8/src/jsregexp.cc \
@@ -219,6 +220,7 @@ LOCAL_SRC_FILES := \
 	v8/src/x64/disasm-x64.cc \
 	v8/src/x64/frames-x64.cc \
 	v8/src/x64/full-codegen-x64.cc \
+	v8/src/x64/interface-descriptors-x64.cc \
 	v8/src/x64/lithium-codegen-x64.cc \
 	v8/src/x64/lithium-gap-resolver-x64.cc \
 	v8/src/x64/lithium-x64.cc \
