@@ -45,6 +45,7 @@ LOCAL_SRC_FILES := \
 	v8/src/code-stubs-hydrogen.cc \
 	v8/src/codegen.cc \
 	v8/src/compilation-cache.cc \
+	v8/src/compiler/access-builder.cc \
 	v8/src/compiler/ast-graph-builder.cc \
 	v8/src/compiler/change-lowering.cc \
 	v8/src/compiler/code-generator.cc \
@@ -67,6 +68,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/machine-type.cc \
 	v8/src/compiler/node-cache.cc \
 	v8/src/compiler/node.cc \
+	v8/src/compiler/operator.cc \
 	v8/src/compiler/pipeline.cc \
 	v8/src/compiler/raw-machine-assembler.cc \
 	v8/src/compiler/register-allocator.cc \
@@ -74,6 +76,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/scheduler.cc \
 	v8/src/compiler/simplified-lowering.cc \
 	v8/src/compiler/simplified-operator-reducer.cc \
+	v8/src/compiler/simplified-operator.cc \
 	v8/src/compiler/source-position.cc \
 	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
