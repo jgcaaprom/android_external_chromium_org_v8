@@ -236,7 +236,6 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/x64/handler-compiler-x64.cc \
 	v8/src/ic/x64/ic-x64.cc \
 	v8/src/ic/x64/ic-compiler-x64.cc \
-	v8/src/ic/x64/ic-conventions-x64.cc \
 	v8/src/ic/x64/stub-cache-x64.cc
 
 

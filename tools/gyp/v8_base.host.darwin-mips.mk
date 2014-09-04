@@ -234,7 +234,6 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/mips/handler-compiler-mips.cc \
 	v8/src/ic/mips/ic-mips.cc \
 	v8/src/ic/mips/ic-compiler-mips.cc \
-	v8/src/ic/mips/ic-conventions-mips.cc \
 	v8/src/ic/mips/stub-cache-mips.cc
 
 

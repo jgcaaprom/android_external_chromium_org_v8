@@ -236,7 +236,6 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/ia32/handler-compiler-ia32.cc \
 	v8/src/ic/ia32/ic-ia32.cc \
 	v8/src/ic/ia32/ic-compiler-ia32.cc \
-	v8/src/ic/ia32/ic-conventions-ia32.cc \
 	v8/src/ic/ia32/stub-cache-ia32.cc
 
 

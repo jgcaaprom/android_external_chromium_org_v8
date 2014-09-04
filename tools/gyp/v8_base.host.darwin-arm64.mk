@@ -241,7 +241,6 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/arm64/handler-compiler-arm64.cc \
 	v8/src/ic/arm64/ic-arm64.cc \
 	v8/src/ic/arm64/ic-compiler-arm64.cc \
-	v8/src/ic/arm64/ic-conventions-arm64.cc \
 	v8/src/ic/arm64/stub-cache-arm64.cc
 
 
