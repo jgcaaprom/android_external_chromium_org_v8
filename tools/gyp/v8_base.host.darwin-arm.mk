@@ -78,8 +78,8 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/simplified-operator-reducer.cc \
 	v8/src/compiler/simplified-operator.cc \
 	v8/src/compiler/source-position.cc \
-	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
+	v8/src/compiler/value-numbering-reducer.cc \
 	v8/src/compiler/verifier.cc \
 	v8/src/compiler.cc \
 	v8/src/contexts.cc \
