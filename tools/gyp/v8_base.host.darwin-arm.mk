@@ -41,6 +41,7 @@ LOCAL_SRC_FILES := \
 	v8/src/builtins.cc \
 	v8/src/cached-powers.cc \
 	v8/src/checks.cc \
+	v8/src/code-factory.cc \
 	v8/src/code-stubs.cc \
 	v8/src/code-stubs-hydrogen.cc \
 	v8/src/codegen.cc \
@@ -65,6 +66,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/js-typed-lowering.cc \
 	v8/src/compiler/linkage.cc \
 	v8/src/compiler/machine-operator-reducer.cc \
+	v8/src/compiler/machine-operator.cc \
 	v8/src/compiler/machine-type.cc \
 	v8/src/compiler/node-cache.cc \
 	v8/src/compiler/node.cc \
