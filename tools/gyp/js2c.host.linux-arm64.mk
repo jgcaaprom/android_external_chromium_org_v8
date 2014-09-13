@@ -6,7 +6,6 @@ LOCAL_MODULE_CLASS := GYP
 LOCAL_MODULE := v8_tools_gyp_js2c_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 LOCAL_MODULE_STEM := js2c
 LOCAL_MODULE_SUFFIX := .stamp
-LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
 LOCAL_MULTILIB := $(GYP_HOST_MULTILIB)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_HOST_VAR_PREFIX))
