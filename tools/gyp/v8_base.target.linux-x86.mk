@@ -33,6 +33,7 @@ LOCAL_SRC_FILES := \
 	v8/src/assert-scope.cc \
 	v8/src/ast-value-factory.cc \
 	v8/src/ast.cc \
+	v8/src/background-parsing-task.cc \
 	v8/src/bignum-dtoa.cc \
 	v8/src/bignum.cc \
 	v8/src/bootstrapper.cc \
@@ -48,6 +49,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/ast-graph-builder.cc \
 	v8/src/compiler/change-lowering.cc \
 	v8/src/compiler/code-generator.cc \
+	v8/src/compiler/common-operator.cc \
 	v8/src/compiler/control-builders.cc \
 	v8/src/compiler/gap-resolver.cc \
 	v8/src/compiler/graph-builder.cc \
