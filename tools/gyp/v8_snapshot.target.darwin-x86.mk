@@ -135,6 +135,8 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/v8 \
 	$(gyp_shared_intermediate_dir) \
 	$(PWD)/frameworks/wilhelm/include \
@@ -240,6 +242,8 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/v8 \
 	$(gyp_shared_intermediate_dir) \
 	$(PWD)/frameworks/wilhelm/include \

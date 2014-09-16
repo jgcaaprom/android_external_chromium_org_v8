@@ -10,7 +10,9 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES :=
+GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp,,,$(GYP_VAR_PREFIX))/icui18n.stamp \
+	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp,,,$(GYP_VAR_PREFIX))/icuuc.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -316,7 +318,6 @@ MY_DEFS_Debug := \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DU_ENABLE_DYLOAD=0' \
-	'-DU_STATIC_IMPLEMENTATION' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
@@ -337,10 +338,12 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/v8 \
 	$(gyp_shared_intermediate_dir) \
-	$(LOCAL_PATH)/third_party/icu/source/i18n \
-	$(LOCAL_PATH)/third_party/icu/source/common \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -438,7 +441,6 @@ MY_DEFS_Release := \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DU_ENABLE_DYLOAD=0' \
-	'-DU_STATIC_IMPLEMENTATION' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DANDROID' \
@@ -454,10 +456,12 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(LOCAL_PATH)/v8 \
 	$(gyp_shared_intermediate_dir) \
-	$(LOCAL_PATH)/third_party/icu/source/i18n \
-	$(LOCAL_PATH)/third_party/icu/source/common \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
