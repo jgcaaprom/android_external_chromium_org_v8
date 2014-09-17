@@ -156,6 +156,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/access-compiler.cc \
 	v8/src/ic/call-optimization.cc \
 	v8/src/ic/handler-compiler.cc \
+	v8/src/ic/ic-state.cc \
 	v8/src/ic/ic.cc \
 	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
