@@ -79,7 +79,6 @@
 //           - OrderedHashSet
 //           - OrderedHashMap
 //         - Context
-//         - TypeFeedbackVector
 //         - JSFunctionResultCache
 //         - ScopeInfo
 //         - TransitionArray
@@ -851,7 +850,6 @@ class GlobalObject;
 class ObjectVisitor;
 class LookupIterator;
 class StringStream;
-class TypeFeedbackVector;
 // We cannot just say "class HeapType;" if it is created from a template... =8-?
 template<class> class TypeImpl;
 struct HeapTypeConfig;
@@ -926,7 +924,6 @@ template <class C> inline bool Is(Object* obj);
   V(Map)                           \
   V(DescriptorArray)               \
   V(TransitionArray)               \
-  V(TypeFeedbackVector)            \
   V(DeoptimizationInputData)       \
   V(DeoptimizationOutputData)      \
   V(DependentCode)                 \
@@ -1019,7 +1016,6 @@ template <class C> inline bool Is(Object* obj);
     "Call to a JavaScript runtime function")                                   \
   V(kCannotTranslatePositionInChangedArea,                                     \
     "Cannot translate position in changed area")                               \
-  V(kClassLiteral, "Class literal")                                            \
   V(kCodeGenerationFailed, "Code generation failed")                           \
   V(kCodeObjectNotProperlyPatched, "Code object not properly patched")         \
   V(kCompoundAssignmentToLookupSlot, "Compound assignment to lookup slot")     \
@@ -6978,8 +6974,9 @@ class SharedFunctionInfo: public HeapObject {
 
   // [feedback_vector] - accumulates ast node feedback from full-codegen and
   // (increasingly) from crankshafted code where sufficient feedback isn't
-  // available.
-  DECL_ACCESSORS(feedback_vector, TypeFeedbackVector)
+  // available. Currently the field is duplicated in
+  // TypeFeedbackInfo::feedback_vector, but the allocation is done here.
+  DECL_ACCESSORS(feedback_vector, FixedArray)
 
   // [instance class name]: class name for instances.
   DECL_ACCESSORS(instance_class_name, Object)
@@ -8371,6 +8368,28 @@ class TypeFeedbackInfo: public Struct {
   static const int kStorage2Offset = kStorage1Offset + kPointerSize;
   static const int kStorage3Offset = kStorage2Offset + kPointerSize;
   static const int kSize = kStorage3Offset + kPointerSize;
+
+  // TODO(mvstanton): move these sentinel declarations to shared function info.
+  // The object that indicates an uninitialized cache.
+  static inline Handle<Object> UninitializedSentinel(Isolate* isolate);
+
+  // The object that indicates a megamorphic state.
+  static inline Handle<Object> MegamorphicSentinel(Isolate* isolate);
+
+  // The object that indicates a premonomorphic state.
+  static inline Handle<Object> PremonomorphicSentinel(Isolate* isolate);
+
+  // The object that indicates a generic state.
+  static inline Handle<Object> GenericSentinel(Isolate* isolate);
+
+  // The object that indicates a monomorphic state of Array with
+  // ElementsKind
+  static inline Handle<Object> MonomorphicArraySentinel(Isolate* isolate,
+      ElementsKind elements_kind);
+
+  // A raw version of the uninitialized sentinel that's safe to read during
+  // garbage collection (e.g., for patching the cache).
+  static inline Object* RawUninitializedSentinel(Heap* heap);
 
  private:
   static const int kTypeChangeChecksumBits = 7;

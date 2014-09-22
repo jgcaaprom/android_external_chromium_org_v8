@@ -175,8 +175,6 @@ DEFINE_IMPLICATION(harmony, harmony_arrow_functions)
 DEFINE_IMPLICATION(harmony, harmony_classes)
 DEFINE_IMPLICATION(harmony, harmony_object_literals)
 DEFINE_IMPLICATION(harmony_modules, harmony_scoping)
-DEFINE_IMPLICATION(harmony_classes, harmony_scoping)
-DEFINE_IMPLICATION(harmony_classes, harmony_object_literals)
 
 DEFINE_IMPLICATION(harmony, es_staging)
 
@@ -291,6 +289,7 @@ DEFINE_BOOL(trace_dead_code_elimination, false, "trace dead code elimination")
 DEFINE_BOOL(unreachable_code_elimination, true, "eliminate unreachable code")
 DEFINE_BOOL(trace_osr, false, "trace on-stack replacement")
 DEFINE_INT(stress_runs, 0, "number of stress runs")
+DEFINE_BOOL(optimize_closures, true, "optimize closures")
 DEFINE_BOOL(lookup_sample_by_shared, true,
             "when picking a function to optimize, watch for shared function "
             "info, not JSFunction itself")
@@ -437,7 +436,6 @@ DEFINE_BOOL(trace_stub_failures, false,
             "trace deoptimization of generated code stubs")
 
 DEFINE_BOOL(serialize_toplevel, false, "enable caching of toplevel scripts")
-DEFINE_BOOL(trace_code_serializer, false, "trace code serializer")
 
 // compiler.cc
 DEFINE_INT(min_preparse_length, 1024,

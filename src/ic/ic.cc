@@ -1109,6 +1109,14 @@ static Handle<Object> TryConvertKey(Handle<Object> key, Isolate* isolate) {
 
 
 Handle<Code> KeyedLoadIC::LoadElementStub(Handle<JSObject> receiver) {
+  // Don't handle megamorphic property accesses for INTERCEPTORS or CALLBACKS
+  // via megamorphic stubs, since they don't have a map in their relocation info
+  // and so the stubs can't be harvested for the object needed for a map check.
+  if (target()->type() != Code::NORMAL) {
+    TRACE_GENERIC_IC(isolate(), "KeyedIC", "non-NORMAL target type");
+    return generic_stub();
+  }
+
   Handle<Map> receiver_map(receiver->map(), isolate());
   MapHandleList target_receiver_maps;
   if (target().is_identical_to(string_stub())) {
@@ -1184,6 +1192,8 @@ MaybeHandle<Object> KeyedLoadIC::Load(Handle<Object> object,
       if (receiver->elements()->map() ==
           isolate()->heap()->sloppy_arguments_elements_map()) {
         stub = sloppy_arguments_stub();
+      } else if (receiver->HasIndexedInterceptor()) {
+        stub = indexed_interceptor_stub();
       } else if (!Object::ToSmi(isolate(), key).is_null() &&
                  (!target().is_identical_to(sloppy_arguments_stub()))) {
         stub = LoadElementStub(receiver);
@@ -1816,8 +1826,8 @@ MaybeHandle<Object> KeyedStoreIC::Store(Handle<Object> object,
 
 
 bool CallIC::DoCustomHandler(Handle<Object> receiver, Handle<Object> function,
-                             Handle<TypeFeedbackVector> vector,
-                             Handle<Smi> slot, const CallICState& state) {
+                             Handle<FixedArray> vector, Handle<Smi> slot,
+                             const CallICState& state) {
   DCHECK(FLAG_use_ic && function->IsJSFunction());
 
   // Are we the array function?
@@ -1851,14 +1861,12 @@ bool CallIC::DoCustomHandler(Handle<Object> receiver, Handle<Object> function,
 
 
 void CallIC::PatchMegamorphic(Handle<Object> function,
-                              Handle<TypeFeedbackVector> vector,
-                              Handle<Smi> slot) {
+                              Handle<FixedArray> vector, Handle<Smi> slot) {
   CallICState state(target()->extra_ic_state());
   IC::State old_state = FeedbackToState(vector, slot);
 
   // We are going generic.
-  vector->set(slot->value(),
-              *TypeFeedbackVector::MegamorphicSentinel(isolate()),
+  vector->set(slot->value(), *TypeFeedbackInfo::MegamorphicSentinel(isolate()),
               SKIP_WRITE_BARRIER);
 
   CallICStub stub(isolate(), state);
@@ -1878,7 +1886,7 @@ void CallIC::PatchMegamorphic(Handle<Object> function,
 
 
 void CallIC::HandleMiss(Handle<Object> receiver, Handle<Object> function,
-                        Handle<TypeFeedbackVector> vector, Handle<Smi> slot) {
+                        Handle<FixedArray> vector, Handle<Smi> slot) {
   CallICState state(target()->extra_ic_state());
   IC::State old_state = FeedbackToState(vector, slot);
   Handle<Object> name = isolate()->factory()->empty_string();
@@ -1890,7 +1898,7 @@ void CallIC::HandleMiss(Handle<Object> receiver, Handle<Object> function,
   if (feedback->IsJSFunction() || !function->IsJSFunction()) {
     // We are going generic.
     vector->set(slot->value(),
-                *TypeFeedbackVector::MegamorphicSentinel(isolate()),
+                *TypeFeedbackInfo::MegamorphicSentinel(isolate()),
                 SKIP_WRITE_BARRIER);
   } else {
     // The feedback is either uninitialized or an allocation site.
@@ -1899,7 +1907,7 @@ void CallIC::HandleMiss(Handle<Object> receiver, Handle<Object> function,
     // merely need to patch the target to match the feedback.
     // TODO(mvstanton): the better approach is to dispense with patching
     // altogether, which is in progress.
-    DCHECK(feedback == *TypeFeedbackVector::UninitializedSentinel(isolate()) ||
+    DCHECK(feedback == *TypeFeedbackInfo::UninitializedSentinel(isolate()) ||
            feedback->IsAllocationSite());
 
     // Do we want to install a custom handler?
@@ -1937,7 +1945,7 @@ RUNTIME_FUNCTION(CallIC_Miss) {
   CallIC ic(isolate);
   Handle<Object> receiver = args.at<Object>(0);
   Handle<Object> function = args.at<Object>(1);
-  Handle<TypeFeedbackVector> vector = args.at<TypeFeedbackVector>(2);
+  Handle<FixedArray> vector = args.at<FixedArray>(2);
   Handle<Smi> slot = args.at<Smi>(3);
   ic.HandleMiss(receiver, function, vector, slot);
   return *function;
@@ -1951,7 +1959,7 @@ RUNTIME_FUNCTION(CallIC_Customization_Miss) {
   // A miss on a custom call ic always results in going megamorphic.
   CallIC ic(isolate);
   Handle<Object> function = args.at<Object>(1);
-  Handle<TypeFeedbackVector> vector = args.at<TypeFeedbackVector>(2);
+  Handle<FixedArray> vector = args.at<FixedArray>(2);
   Handle<Smi> slot = args.at<Smi>(3);
   ic.PatchMegamorphic(function, vector, slot);
   return *function;
