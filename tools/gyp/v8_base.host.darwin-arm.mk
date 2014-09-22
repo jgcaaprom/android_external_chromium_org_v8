@@ -267,6 +267,7 @@ MY_CFLAGS_Debug := \
 	-m32 \
 	-Os \
 	-g \
+	-gdwarf-4 \
 	-fdata-sections \
 	-ffunction-sections \
 	-fomit-frame-pointer \

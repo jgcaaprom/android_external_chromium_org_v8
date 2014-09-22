@@ -58,6 +58,7 @@ MY_CFLAGS_Debug := \
 	-m64 \
 	-Os \
 	-g \
+	-gdwarf-4 \
 	-fdata-sections \
 	-ffunction-sections \
 	-funwind-tables
