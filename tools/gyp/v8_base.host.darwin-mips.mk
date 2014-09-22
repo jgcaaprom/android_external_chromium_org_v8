@@ -205,7 +205,6 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
-	v8/src/type-feedback-vector.cc \
 	v8/src/type-info.cc \
 	v8/src/types.cc \
 	v8/src/typing.cc \
