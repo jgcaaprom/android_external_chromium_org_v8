@@ -131,6 +131,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
   Arm64OperandConverter i(this, instr);
   InstructionCode opcode = instr->opcode();
   switch (ArchOpcodeField::decode(opcode)) {
+    case kArchCallAddress: {
+      DirectCEntryStub stub(isolate());
+      stub.GenerateCall(masm(), i.InputRegister(0));
+      break;
+    }
     case kArchCallCodeObject: {
       if (instr->InputAt(0)->IsImmediate()) {
         __ Call(Handle<Code>::cast(i.InputHeapObject(0)),
@@ -156,6 +161,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Ldr(x10, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(x10);
       AddSafepointAndDeopt(instr);
+      break;
+    }
+    case kArchDrop: {
+      int words = MiscField::decode(instr->opcode());
+      __ Drop(words);
       break;
     }
     case kArchJmp:
