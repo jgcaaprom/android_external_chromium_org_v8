@@ -61,6 +61,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/graph.cc \
 	v8/src/compiler/instruction-selector.cc \
 	v8/src/compiler/instruction.cc \
+	v8/src/compiler/js-builtin-reducer.cc \
 	v8/src/compiler/js-context-specialization.cc \
 	v8/src/compiler/js-generic-lowering.cc \
 	v8/src/compiler/js-graph.cc \
@@ -206,6 +207,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
+	v8/src/type-feedback-vector.cc \
 	v8/src/type-info.cc \
 	v8/src/types.cc \
 	v8/src/typing.cc \
