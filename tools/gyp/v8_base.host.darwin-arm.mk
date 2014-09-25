@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	v8/src/ast-value-factory.cc \
 	v8/src/ast.cc \
 	v8/src/background-parsing-task.cc \
+	v8/src/bailout-reason.cc \
 	v8/src/bignum-dtoa.cc \
 	v8/src/bignum.cc \
 	v8/src/bootstrapper.cc \
