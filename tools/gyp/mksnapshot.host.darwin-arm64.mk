@@ -55,6 +55,7 @@ MY_CFLAGS_Debug := \
 	-Wstring-conversion \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
+	-Wno-unused-local-typedef \
 	-m64 \
 	-Os \
 	-g \
@@ -138,6 +139,7 @@ MY_CFLAGS_Release := \
 	-Wstring-conversion \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
+	-Wno-unused-local-typedef \
 	-m64 \
 	-fno-ident \
 	-fdata-sections \
