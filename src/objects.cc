@@ -8,6 +8,7 @@
 #include "src/allocation-site-scopes.h"
 #include "src/api.h"
 #include "src/arguments.h"
+#include "src/base/bits.h"
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
@@ -23,6 +24,7 @@
 #include "src/heap/mark-compact.h"
 #include "src/heap/objects-visiting-inl.h"
 #include "src/hydrogen.h"
+#include "src/ic/ic.h"
 #include "src/isolate-inl.h"
 #include "src/log.h"
 #include "src/lookup.h"
@@ -108,6 +110,7 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it) {
   for (; it->IsFound(); it->Next()) {
     switch (it->state()) {
       case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
         UNREACHABLE();
       case LookupIterator::JSPROXY:
         return JSProxy::GetPropertyWithHandler(it->GetHolder<JSProxy>(),
@@ -122,18 +125,12 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it) {
       case LookupIterator::ACCESS_CHECK:
         if (it->HasAccess(v8::ACCESS_GET)) break;
         return JSObject::GetPropertyWithFailedAccessCheck(it);
-      case LookupIterator::PROPERTY:
-        if (it->HasProperty()) {
-          switch (it->property_kind()) {
-            case LookupIterator::ACCESSOR:
-              return GetPropertyWithAccessor(it->GetReceiver(), it->name(),
-                                             it->GetHolder<JSObject>(),
-                                             it->GetAccessors());
-            case LookupIterator::DATA:
-              return it->GetDataValue();
-          }
-        }
-        break;
+      case LookupIterator::ACCESSOR:
+        return GetPropertyWithAccessor(it->GetReceiver(), it->name(),
+                                       it->GetHolder<JSObject>(),
+                                       it->GetAccessors());
+      case LookupIterator::DATA:
+        return it->GetDataValue();
     }
   }
   return it->factory()->undefined_value();
@@ -142,7 +139,8 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it) {
 
 Handle<Object> JSObject::GetDataProperty(Handle<JSObject> object,
                                          Handle<Name> key) {
-  LookupIterator it(object, key, LookupIterator::CHECK_DERIVED_PROPERTY);
+  LookupIterator it(object, key,
+                    LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   return GetDataProperty(&it);
 }
 
@@ -150,25 +148,24 @@ Handle<Object> JSObject::GetDataProperty(Handle<JSObject> object,
 Handle<Object> JSObject::GetDataProperty(LookupIterator* it) {
   for (; it->IsFound(); it->Next()) {
     switch (it->state()) {
-      case LookupIterator::NOT_FOUND:
-      case LookupIterator::ACCESS_CHECK:
       case LookupIterator::INTERCEPTOR:
+      case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
         UNREACHABLE();
+      case LookupIterator::ACCESS_CHECK:
+        if (it->HasAccess(v8::ACCESS_GET)) continue;
+      // Fall through.
       case LookupIterator::JSPROXY:
         it->NotFound();
         return it->isolate()->factory()->undefined_value();
-      case LookupIterator::PROPERTY:
-        if (!it->HasProperty()) continue;
-        switch (it->property_kind()) {
-          case LookupIterator::DATA:
-            return it->GetDataValue();
-          case LookupIterator::ACCESSOR:
-            // TODO(verwaest): For now this doesn't call into
-            // ExecutableAccessorInfo, since clients don't need it. Update once
-            // relevant.
-            it->NotFound();
-            return it->isolate()->factory()->undefined_value();
-        }
+      case LookupIterator::ACCESSOR:
+        // TODO(verwaest): For now this doesn't call into
+        // ExecutableAccessorInfo, since clients don't need it. Update once
+        // relevant.
+        it->NotFound();
+        return it->isolate()->factory()->undefined_value();
+      case LookupIterator::DATA:
+        return it->GetDataValue();
     }
   }
   return it->isolate()->factory()->undefined_value();
@@ -407,7 +404,7 @@ MaybeHandle<Object> JSProxy::GetPropertyWithHandler(Handle<JSProxy> proxy,
 
   Handle<Object> args[] = { receiver, name };
   return CallTrap(
-      proxy, "get",  isolate->derived_get_trap(), ARRAY_SIZE(args), args);
+      proxy, "get",  isolate->derived_get_trap(), arraysize(args), args);
 }
 
 
@@ -422,11 +419,10 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(Handle<Object> receiver,
     Handle<AccessorInfo> info = Handle<AccessorInfo>::cast(structure);
     if (!info->IsCompatibleReceiver(*receiver)) {
       Handle<Object> args[2] = { name, receiver };
-      Handle<Object> error =
-          isolate->factory()->NewTypeError("incompatible_method_receiver",
-                                           HandleVector(args,
-                                                        ARRAY_SIZE(args)));
-      return isolate->Throw<Object>(error);
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError("incompatible_method_receiver",
+                                   HandleVector(args, arraysize(args))),
+                      Object);
     }
     if (structure->IsDeclaredAccessorInfo()) {
       return GetDeclaredAccessorProperty(
@@ -494,11 +490,10 @@ MaybeHandle<Object> Object::SetPropertyWithAccessor(
     ExecutableAccessorInfo* info = ExecutableAccessorInfo::cast(*structure);
     if (!info->IsCompatibleReceiver(*receiver)) {
       Handle<Object> args[2] = { name, receiver };
-      Handle<Object> error =
-          isolate->factory()->NewTypeError("incompatible_method_receiver",
-                                           HandleVector(args,
-                                                        ARRAY_SIZE(args)));
-      return isolate->Throw<Object>(error);
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError("incompatible_method_receiver",
+                                   HandleVector(args, arraysize(args))),
+                      Object);
     }
     Object* call_obj = info->setter();
     v8::AccessorNameSetterCallback call_fun =
@@ -522,10 +517,9 @@ MaybeHandle<Object> Object::SetPropertyWithAccessor(
     } else {
       if (strict_mode == SLOPPY) return value;
       Handle<Object> args[2] = { name, holder };
-      Handle<Object> error =
-          isolate->factory()->NewTypeError("no_setter_in_callback",
-                                           HandleVector(args, 2));
-      return isolate->Throw<Object>(error);
+      THROW_NEW_ERROR(
+          isolate, NewTypeError("no_setter_in_callback", HandleVector(args, 2)),
+          Object);
     }
   }
 
@@ -571,7 +565,7 @@ MaybeHandle<Object> Object::SetPropertyWithDefinedSetter(
 
   Handle<Object> argv[] = { value };
   RETURN_ON_EXCEPTION(isolate, Execution::Call(isolate, setter, receiver,
-                                               ARRAY_SIZE(argv), argv, true),
+                                               arraysize(argv), argv, true),
                       Object);
   return value;
 }
@@ -579,9 +573,7 @@ MaybeHandle<Object> Object::SetPropertyWithDefinedSetter(
 
 static bool FindAllCanReadHolder(LookupIterator* it) {
   for (; it->IsFound(); it->Next()) {
-    if (it->state() == LookupIterator::PROPERTY &&
-        it->HasProperty() &&
-        it->property_kind() == LookupIterator::ACCESSOR) {
+    if (it->state() == LookupIterator::ACCESSOR) {
       Handle<Object> accessors = it->GetAccessors();
       if (accessors->IsAccessorInfo()) {
         if (AccessorInfo::cast(*accessors)->all_can_read()) return true;
@@ -620,8 +612,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithFailedAccessCheck(
 
 static bool FindAllCanWriteHolder(LookupIterator* it) {
   for (; it->IsFound(); it->Next()) {
-    if (it->state() == LookupIterator::PROPERTY && it->HasProperty() &&
-        it->property_kind() == LookupIterator::ACCESSOR) {
+    if (it->state() == LookupIterator::ACCESSOR) {
       Handle<Object> accessors = it->GetAccessors();
       if (accessors->IsAccessorInfo()) {
         if (AccessorInfo::cast(*accessors)->all_can_write()) return true;
@@ -1014,38 +1005,30 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   // Abort if size does not allow in-place conversion.
   if (size < ExternalString::kShortSize) return false;
   Heap* heap = GetHeap();
-  bool is_ascii = this->IsOneByteRepresentation();
+  bool is_one_byte = this->IsOneByteRepresentation();
   bool is_internalized = this->IsInternalizedString();
 
   // Morph the string to an external string by replacing the map and
-  // reinitializing the fields.  This won't work if
-  // - the space the existing string occupies is too small for a regular
-  //   external string.
-  // - the existing string is in old pointer space and the backing store of
-  //   the external string is not aligned.  The GC cannot deal with a field
-  //   containing a possibly unaligned address to outside of V8's heap.
-  // In either case we resort to a short external string instead, omitting
+  // reinitializing the fields.  This won't work if the space the existing
+  // string occupies is too small for a regular  external string.
+  // Instead, we resort to a short external string instead, omitting
   // the field caching the address of the backing store.  When we encounter
   // short external strings in generated code, we need to bailout to runtime.
   Map* new_map;
-  if (size < ExternalString::kSize ||
-      heap->old_pointer_space()->Contains(this)) {
+  if (size < ExternalString::kSize) {
     new_map = is_internalized
-        ? (is_ascii
-            ? heap->
-                short_external_internalized_string_with_one_byte_data_map()
-            : heap->short_external_internalized_string_map())
-        : (is_ascii
-            ? heap->short_external_string_with_one_byte_data_map()
-            : heap->short_external_string_map());
+        ? (is_one_byte
+           ? heap->short_external_internalized_string_with_one_byte_data_map()
+           : heap->short_external_internalized_string_map())
+        : (is_one_byte ? heap->short_external_string_with_one_byte_data_map()
+                       : heap->short_external_string_map());
   } else {
     new_map = is_internalized
-        ? (is_ascii
-            ? heap->external_internalized_string_with_one_byte_data_map()
-            : heap->external_internalized_string_map())
-        : (is_ascii
-            ? heap->external_string_with_one_byte_data_map()
-            : heap->external_string_map());
+        ? (is_one_byte
+           ? heap->external_internalized_string_with_one_byte_data_map()
+           : heap->external_internalized_string_map())
+        : (is_one_byte ? heap->external_string_with_one_byte_data_map()
+                       : heap->external_string_map());
   }
 
   // Byte size of the external String object.
@@ -1065,7 +1048,7 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
 }
 
 
-bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
+bool String::MakeExternal(v8::String::ExternalOneByteStringResource* resource) {
   // Externalizing twice leaks the external resource, so it's
   // prohibited by the API.
   DCHECK(!this->IsExternalString());
@@ -1092,25 +1075,20 @@ bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
   bool is_internalized = this->IsInternalizedString();
 
   // Morph the string to an external string by replacing the map and
-  // reinitializing the fields.  This won't work if
-  // - the space the existing string occupies is too small for a regular
-  //   external string.
-  // - the existing string is in old pointer space and the backing store of
-  //   the external string is not aligned.  The GC cannot deal with a field
-  //   containing a possibly unaligned address to outside of V8's heap.
-  // In either case we resort to a short external string instead, omitting
+  // reinitializing the fields.  This won't work if the space the existing
+  // string occupies is too small for a regular  external string.
+  // Instead, we resort to a short external string instead, omitting
   // the field caching the address of the backing store.  When we encounter
   // short external strings in generated code, we need to bailout to runtime.
   Map* new_map;
-  if (size < ExternalString::kSize ||
-      heap->old_pointer_space()->Contains(this)) {
+  if (size < ExternalString::kSize) {
     new_map = is_internalized
-        ? heap->short_external_ascii_internalized_string_map()
-        : heap->short_external_ascii_string_map();
+                  ? heap->short_external_one_byte_internalized_string_map()
+                  : heap->short_external_one_byte_string_map();
   } else {
     new_map = is_internalized
-        ? heap->external_ascii_internalized_string_map()
-        : heap->external_ascii_string_map();
+                  ? heap->external_one_byte_internalized_string_map()
+                  : heap->external_one_byte_string_map();
   }
 
   // Byte size of the external String object.
@@ -1121,7 +1099,7 @@ bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
   // the left-over space to avoid races with the sweeper thread.
   this->synchronized_set_map(new_map);
 
-  ExternalAsciiString* self = ExternalAsciiString::cast(this);
+  ExternalOneByteString* self = ExternalOneByteString::cast(this);
   self->set_resource(resource);
   if (is_internalized) self->Hash();  // Force regeneration of the hash value.
 
@@ -1150,16 +1128,16 @@ void String::StringShortPrint(StringStream* accumulator) {
     len = kMaxShortPrintLength;
     truncated = true;
   }
-  bool ascii = true;
+  bool one_byte = true;
   for (int i = 0; i < len; i++) {
     uint16_t c = stream.GetNext();
 
     if (c < 32 || c >= 127) {
-      ascii = false;
+      one_byte = false;
     }
   }
   stream.Reset(this);
-  if (ascii) {
+  if (one_byte) {
     accumulator->Add("<String[%u]: ", length());
     for (int i = 0; i < len; i++) {
       accumulator->Put(static_cast<char>(stream.GetNext()));
@@ -1573,8 +1551,8 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
         break;
       case kExternalStringTag:
         if ((type & kStringEncodingMask) == kOneByteStringTag) {
-          reinterpret_cast<ExternalAsciiString*>(this)->
-              ExternalAsciiStringIterateBody(v);
+          reinterpret_cast<ExternalOneByteString*>(this)
+              ->ExternalOneByteStringIterateBody(v);
         } else {
           reinterpret_cast<ExternalTwoByteString*>(this)->
               ExternalTwoByteStringIterateBody(v);
@@ -1968,9 +1946,21 @@ void JSObject::MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
   int total_size = number_of_fields + unused;
   int external = total_size - inobject;
 
-  if ((old_map->unused_property_fields() == 0) &&
-      (number_of_fields != old_number_of_fields) &&
-      (new_map->GetBackPointer() == *old_map)) {
+  if (number_of_fields != old_number_of_fields &&
+      new_map->GetBackPointer() == *old_map) {
+    PropertyDetails details = new_map->GetLastDescriptorDetails();
+
+    if (old_map->unused_property_fields() > 0) {
+      if (details.representation().IsDouble()) {
+        Handle<Object> value = isolate->factory()->NewHeapNumber(0, MUTABLE);
+        FieldIndex index =
+            FieldIndex::ForDescriptor(*new_map, new_map->LastAdded());
+        object->FastPropertyAtPut(index, *value);
+      }
+      object->synchronized_set_map(*new_map);
+      return;
+    }
+
     DCHECK(number_of_fields == old_number_of_fields + 1);
     // This migration is a transition from a map that has run out out property
     // space. Therefore it could be done by extending the backing store.
@@ -1979,7 +1969,6 @@ void JSObject::MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
         FixedArray::CopySize(old_storage, external);
 
     // Properly initialize newly added property.
-    PropertyDetails details = new_map->GetLastDescriptorDetails();
     Handle<Object> value;
     if (details.representation().IsDouble()) {
       value = isolate->factory()->NewHeapNumber(0, MUTABLE);
@@ -2714,6 +2703,7 @@ MaybeHandle<Map> Map::TryUpdate(Handle<Map> map) {
 
 // static
 Handle<Map> Map::Update(Handle<Map> map) {
+  if (!map->is_deprecated()) return map;
   return GeneralizeRepresentation(map, 0, Representation::None(),
                                   HeapType::None(map->GetIsolate()),
                                   ALLOW_AS_CONSTANT);
@@ -2772,8 +2762,6 @@ MaybeHandle<Map> Map::TryUpdateInternal(Handle<Map> old_map) {
         break;
 
       case NORMAL:
-      case HANDLER:
-      case INTERCEPTOR:
         UNREACHABLE();
     }
   }
@@ -2873,30 +2861,45 @@ MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
         }
         break;
 
-      case LookupIterator::PROPERTY:
-        if (!it->HasProperty()) break;
+      case LookupIterator::ACCESSOR:
         if (it->property_details().IsReadOnly()) {
           return WriteToReadOnlyProperty(it, value, strict_mode);
         }
-        switch (it->property_kind()) {
-          case LookupIterator::ACCESSOR:
-            if (it->HolderIsReceiverOrHiddenPrototype() ||
-                !it->GetAccessors()->IsDeclaredAccessorInfo()) {
-              return SetPropertyWithAccessor(it->GetReceiver(), it->name(),
-                                             value, it->GetHolder<JSObject>(),
-                                             it->GetAccessors(), strict_mode);
-            }
-            break;
-          case LookupIterator::DATA:
-            if (it->HolderIsReceiverOrHiddenPrototype()) {
-              return SetDataProperty(it, value);
-            }
+        if (it->HolderIsReceiverOrHiddenPrototype() ||
+            !it->GetAccessors()->IsDeclaredAccessorInfo()) {
+          return SetPropertyWithAccessor(it->GetReceiver(), it->name(), value,
+                                         it->GetHolder<JSObject>(),
+                                         it->GetAccessors(), strict_mode);
         }
+        done = true;
+        break;
+
+      case LookupIterator::DATA:
+        if (it->property_details().IsReadOnly()) {
+          return WriteToReadOnlyProperty(it, value, strict_mode);
+        }
+        if (it->HolderIsReceiverOrHiddenPrototype()) {
+          return SetDataProperty(it, value);
+        }
+        done = true;
+        break;
+
+      case LookupIterator::TRANSITION:
         done = true;
         break;
     }
 
     if (done) break;
+  }
+
+  // If the receiver is the JSGlobalObject, the store was contextual. In case
+  // the property did not exist yet on the global object itself, we have to
+  // throw a reference error in strict mode.
+  if (it->GetReceiver()->IsJSGlobalObject() && strict_mode == STRICT) {
+    Handle<Object> args[1] = {it->name()};
+    THROW_NEW_ERROR(it->isolate(),
+                    NewReferenceError("not_defined", HandleVector(args, 1)),
+                    Object);
   }
 
   return AddDataProperty(it, value, NONE, strict_mode, store_mode);
@@ -2909,14 +2912,15 @@ MaybeHandle<Object> Object::WriteToReadOnlyProperty(LookupIterator* it,
   if (strict_mode != STRICT) return value;
 
   Handle<Object> args[] = {it->name(), it->GetReceiver()};
-  Handle<Object> error = it->factory()->NewTypeError(
-      "strict_read_only_property", HandleVector(args, ARRAY_SIZE(args)));
-  return it->isolate()->Throw<Object>(error);
+  THROW_NEW_ERROR(it->isolate(),
+                  NewTypeError("strict_read_only_property",
+                               HandleVector(args, arraysize(args))),
+                  Object);
 }
 
 
-MaybeHandle<Object> Object::SetDataProperty(LookupIterator* it,
-                                            Handle<Object> value) {
+Handle<Object> Object::SetDataProperty(LookupIterator* it,
+                                       Handle<Object> value) {
   // Proxies are handled on the WithHandler path. Other non-JSObjects cannot
   // have own properties.
   Handle<JSObject> receiver = Handle<JSObject>::cast(it->GetReceiver());
@@ -2960,31 +2964,26 @@ MaybeHandle<Object> Object::AddDataProperty(LookupIterator* it,
     // TODO(verwaest): Throw a TypeError with a more specific message.
     return WriteToReadOnlyProperty(it, value, strict_mode);
   }
-  Handle<JSObject> receiver = Handle<JSObject>::cast(it->GetReceiver());
+
+  Handle<JSObject> receiver = it->GetStoreTarget();
 
   // If the receiver is a JSGlobalProxy, store on the prototype (JSGlobalObject)
   // instead. If the prototype is Null, the proxy is detached.
-  if (receiver->IsJSGlobalProxy()) {
-    // Trying to assign to a detached proxy.
-    PrototypeIterator iter(it->isolate(), receiver);
-    if (iter.IsAtEnd()) return value;
-    receiver =
-        Handle<JSGlobalObject>::cast(PrototypeIterator::GetCurrent(iter));
-  }
-
-  if (!it->name().is_identical_to(it->isolate()->factory()->hidden_string()) &&
-      !receiver->map()->is_extensible()) {
-    if (strict_mode == SLOPPY) return value;
-
-    Handle<Object> args[1] = {it->name()};
-    Handle<Object> error = it->factory()->NewTypeError(
-        "object_not_extensible", HandleVector(args, ARRAY_SIZE(args)));
-    return it->isolate()->Throw<Object>(error);
-  }
+  if (receiver->IsJSGlobalProxy()) return value;
 
   // Possibly migrate to the most up-to-date map that will be able to store
   // |value| under it->name() with |attributes|.
-  it->TransitionToDataProperty(value, attributes, store_mode);
+  it->PrepareTransitionToDataProperty(value, attributes, store_mode);
+  if (it->state() != LookupIterator::TRANSITION) {
+    if (strict_mode == SLOPPY) return value;
+
+    Handle<Object> args[1] = {it->name()};
+    THROW_NEW_ERROR(it->isolate(),
+                    NewTypeError("object_not_extensible",
+                                 HandleVector(args, arraysize(args))),
+                    Object);
+  }
+  it->ApplyTransitionToDataProperty();
 
   // TODO(verwaest): Encapsulate dictionary handling better.
   if (receiver->map()->is_dictionary_map()) {
@@ -3379,46 +3378,6 @@ Handle<Map> JSObject::GetElementsTransitionMap(Handle<JSObject> object,
 }
 
 
-void JSObject::LookupOwnRealNamedProperty(Handle<Name> name,
-                                          LookupResult* result) {
-  DisallowHeapAllocation no_gc;
-  if (IsJSGlobalProxy()) {
-    PrototypeIterator iter(GetIsolate(), this);
-    if (iter.IsAtEnd()) return result->NotFound();
-    DCHECK(iter.GetCurrent()->IsJSGlobalObject());
-    return JSObject::cast(iter.GetCurrent())
-        ->LookupOwnRealNamedProperty(name, result);
-  }
-
-  if (HasFastProperties()) {
-    map()->LookupDescriptor(this, *name, result);
-    // A property or a map transition was found. We return all of these result
-    // types because LookupOwnRealNamedProperty is used when setting
-    // properties where map transitions are handled.
-    DCHECK(!result->IsFound() ||
-           (result->holder() == this && result->IsFastPropertyType()));
-    return;
-  }
-
-  int entry = property_dictionary()->FindEntry(name);
-  if (entry != NameDictionary::kNotFound) {
-    Object* value = property_dictionary()->ValueAt(entry);
-    if (IsGlobalObject()) {
-      PropertyDetails d = property_dictionary()->DetailsAt(entry);
-      if (d.IsDeleted() || PropertyCell::cast(value)->value()->IsTheHole()) {
-        result->NotFound();
-        return;
-      }
-      value = PropertyCell::cast(value)->value();
-    }
-    result->DictionaryResult(this, entry);
-    return;
-  }
-
-  result->NotFound();
-}
-
-
 Maybe<bool> JSProxy::HasPropertyWithHandler(Handle<JSProxy> proxy,
                                             Handle<Name> name) {
   Isolate* isolate = proxy->GetIsolate();
@@ -3430,7 +3389,7 @@ Maybe<bool> JSProxy::HasPropertyWithHandler(Handle<JSProxy> proxy,
   Handle<Object> result;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, result, CallTrap(proxy, "has", isolate->derived_has_trap(),
-                                ARRAY_SIZE(args), args),
+                                arraysize(args), args),
       Maybe<bool>());
 
   return maybe(result->BooleanValue());
@@ -3453,7 +3412,7 @@ MaybeHandle<Object> JSProxy::SetPropertyWithHandler(Handle<JSProxy> proxy,
       CallTrap(proxy,
                "set",
                isolate->derived_set_trap(),
-               ARRAY_SIZE(args),
+               arraysize(args),
                args),
       Object);
 
@@ -3481,7 +3440,7 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
       CallTrap(proxy,
                "getPropertyDescriptor",
                Handle<Object>(),
-               ARRAY_SIZE(args),
+               arraysize(args),
                args),
       Object);
 
@@ -3498,39 +3457,37 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
       Execution::Call(isolate,
                       isolate->to_complete_property_descriptor(),
                       result,
-                      ARRAY_SIZE(argv),
+                      arraysize(argv),
                       argv),
       Object);
 
   // [[GetProperty]] requires to check that all properties are configurable.
   Handle<String> configurable_name =
       isolate->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("configurable_"));
+          STATIC_CHAR_VECTOR("configurable_"));
   Handle<Object> configurable =
       Object::GetProperty(desc, configurable_name).ToHandleChecked();
   DCHECK(configurable->IsBoolean());
   if (configurable->IsFalse()) {
-    Handle<String> trap =
-        isolate->factory()->InternalizeOneByteString(
-            STATIC_ASCII_VECTOR("getPropertyDescriptor"));
+    Handle<String> trap = isolate->factory()->InternalizeOneByteString(
+        STATIC_CHAR_VECTOR("getPropertyDescriptor"));
     Handle<Object> args[] = { handler, trap, name };
-    Handle<Object> error = isolate->factory()->NewTypeError(
-        "proxy_prop_not_configurable", HandleVector(args, ARRAY_SIZE(args)));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate, NewTypeError("proxy_prop_not_configurable",
+                                          HandleVector(args, arraysize(args))),
+                    Object);
   }
   DCHECK(configurable->IsTrue());
 
   // Check for DataDescriptor.
   Handle<String> hasWritable_name =
       isolate->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("hasWritable_"));
+          STATIC_CHAR_VECTOR("hasWritable_"));
   Handle<Object> hasWritable =
       Object::GetProperty(desc, hasWritable_name).ToHandleChecked();
   DCHECK(hasWritable->IsBoolean());
   if (hasWritable->IsTrue()) {
-    Handle<String> writable_name =
-        isolate->factory()->InternalizeOneByteString(
-            STATIC_ASCII_VECTOR("writable_"));
+    Handle<String> writable_name = isolate->factory()->InternalizeOneByteString(
+        STATIC_CHAR_VECTOR("writable_"));
     Handle<Object> writable =
         Object::GetProperty(desc, writable_name).ToHandleChecked();
     DCHECK(writable->IsBoolean());
@@ -3538,14 +3495,14 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
     if (!*done) return isolate->factory()->the_hole_value();
     if (strict_mode == SLOPPY) return value;
     Handle<Object> args[] = { name, receiver };
-    Handle<Object> error = isolate->factory()->NewTypeError(
-        "strict_read_only_property", HandleVector(args, ARRAY_SIZE(args)));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
+                                          HandleVector(args, arraysize(args))),
+                    Object);
   }
 
   // We have an AccessorDescriptor.
-  Handle<String> set_name = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("set_"));
+  Handle<String> set_name =
+      isolate->factory()->InternalizeOneByteString(STATIC_CHAR_VECTOR("set_"));
   Handle<Object> setter = Object::GetProperty(desc, set_name).ToHandleChecked();
   if (!setter->IsUndefined()) {
     // TODO(rossberg): nicer would be to cast to some JSCallable here...
@@ -3555,9 +3512,9 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
 
   if (strict_mode == SLOPPY) return value;
   Handle<Object> args2[] = { name, proxy };
-  Handle<Object> error = isolate->factory()->NewTypeError(
-      "no_setter_in_callback", HandleVector(args2, ARRAY_SIZE(args2)));
-  return isolate->Throw<Object>(error);
+  THROW_NEW_ERROR(isolate, NewTypeError("no_setter_in_callback",
+                                        HandleVector(args2, arraysize(args2))),
+                  Object);
 }
 
 
@@ -3575,7 +3532,7 @@ MaybeHandle<Object> JSProxy::DeletePropertyWithHandler(
       CallTrap(proxy,
                "delete",
                Handle<Object>(),
-               ARRAY_SIZE(args),
+               arraysize(args),
                args),
       Object);
 
@@ -3583,11 +3540,11 @@ MaybeHandle<Object> JSProxy::DeletePropertyWithHandler(
   if (mode == STRICT_DELETION && !result_bool) {
     Handle<Object> handler(proxy->handler(), isolate);
     Handle<String> trap_name = isolate->factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("delete"));
+        STATIC_CHAR_VECTOR("delete"));
     Handle<Object> args[] = { handler, trap_name };
-    Handle<Object> error = isolate->factory()->NewTypeError(
-        "handler_failed", HandleVector(args, ARRAY_SIZE(args)));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate, NewTypeError("handler_failed",
+                                          HandleVector(args, arraysize(args))),
+                    Object);
   }
   return isolate->factory()->ToBoolean(result_bool);
 }
@@ -3614,7 +3571,7 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, result,
       proxy->CallTrap(proxy, "getPropertyDescriptor", Handle<Object>(),
-                      ARRAY_SIZE(args), args),
+                      arraysize(args), args),
       Maybe<PropertyAttributes>());
 
   if (result->IsUndefined()) return maybe(ABSENT);
@@ -3624,31 +3581,31 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, desc,
       Execution::Call(isolate, isolate->to_complete_property_descriptor(),
-                      result, ARRAY_SIZE(argv), argv),
+                      result, arraysize(argv), argv),
       Maybe<PropertyAttributes>());
 
   // Convert result to PropertyAttributes.
   Handle<String> enum_n = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("enumerable_"));
+      STATIC_CHAR_VECTOR("enumerable_"));
   Handle<Object> enumerable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, enumerable,
                                    Object::GetProperty(desc, enum_n),
                                    Maybe<PropertyAttributes>());
   Handle<String> conf_n = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("configurable_"));
+      STATIC_CHAR_VECTOR("configurable_"));
   Handle<Object> configurable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, configurable,
                                    Object::GetProperty(desc, conf_n),
                                    Maybe<PropertyAttributes>());
   Handle<String> writ_n = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("writable_"));
+      STATIC_CHAR_VECTOR("writable_"));
   Handle<Object> writable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, writable,
                                    Object::GetProperty(desc, writ_n),
                                    Maybe<PropertyAttributes>());
   if (!writable->BooleanValue()) {
     Handle<String> set_n = isolate->factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("set_"));
+        STATIC_CHAR_VECTOR("set_"));
     Handle<Object> setter;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, setter,
                                      Object::GetProperty(desc, set_n),
@@ -3659,11 +3616,12 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
   if (configurable->IsFalse()) {
     Handle<Object> handler(proxy->handler(), isolate);
     Handle<String> trap = isolate->factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("getPropertyDescriptor"));
+        STATIC_CHAR_VECTOR("getPropertyDescriptor"));
     Handle<Object> args[] = { handler, trap, name };
-    Handle<Object> error = isolate->factory()->NewTypeError(
-        "proxy_prop_not_configurable", HandleVector(args, ARRAY_SIZE(args)));
-    isolate->Throw(*error);
+    Handle<Object> error;
+    MaybeHandle<Object> maybe_error = isolate->factory()->NewTypeError(
+        "proxy_prop_not_configurable", HandleVector(args, arraysize(args)));
+    if (maybe_error.ToHandle(&error)) isolate->Throw(*error);
     return maybe(NONE);
   }
 
@@ -3723,9 +3681,10 @@ MaybeHandle<Object> JSProxy::CallTrap(Handle<JSProxy> proxy,
   if (trap->IsUndefined()) {
     if (derived.is_null()) {
       Handle<Object> args[] = { handler, trap_name };
-      Handle<Object> error = isolate->factory()->NewTypeError(
-        "handler_trap_missing", HandleVector(args, ARRAY_SIZE(args)));
-      return isolate->Throw<Object>(error);
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError("handler_trap_missing",
+                                   HandleVector(args, arraysize(args))),
+                      Object);
     }
     trap = Handle<Object>(derived);
   }
@@ -3816,7 +3775,8 @@ void JSObject::WriteToField(int descriptor, Object* value) {
 void JSObject::AddProperty(Handle<JSObject> object, Handle<Name> name,
                            Handle<Object> value,
                            PropertyAttributes attributes) {
-  LookupIterator it(object, name, LookupIterator::CHECK_PROPERTY);
+  LookupIterator it(object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
+  CHECK_NE(LookupIterator::ACCESS_CHECK, it.state());
 #ifdef DEBUG
   uint32_t index;
   DCHECK(!object->IsJSProxy());
@@ -3841,15 +3801,15 @@ MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
     PropertyAttributes attributes,
     ExecutableAccessorInfoHandling handling) {
   DCHECK(!value->IsTheHole());
-  LookupIterator it(object, name,
-                    LookupIterator::CHECK_HIDDEN_SKIP_INTERCEPTOR);
+  LookupIterator it(object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
   bool is_observed = object->map()->is_observed() &&
                      *name != it.isolate()->heap()->hidden_string();
   for (; it.IsFound(); it.Next()) {
     switch (it.state()) {
-      case LookupIterator::NOT_FOUND:
-      case LookupIterator::JSPROXY:
       case LookupIterator::INTERCEPTOR:
+      case LookupIterator::JSPROXY:
+      case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
         UNREACHABLE();
 
       case LookupIterator::ACCESS_CHECK:
@@ -3858,88 +3818,92 @@ MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
         }
         break;
 
-      case LookupIterator::PROPERTY: {
-        if (!it.HasProperty()) break;
-        if (it.HolderIsNonGlobalHiddenPrototype()) break;
+      case LookupIterator::ACCESSOR: {
         PropertyDetails details = it.property_details();
         Handle<Object> old_value = it.isolate()->factory()->the_hole_value();
-        switch (it.property_kind()) {
-          case LookupIterator::ACCESSOR: {
-            // Ensure the context isn't changed after calling into accessors.
-            AssertNoContextChange ncc(it.isolate());
+        // Ensure the context isn't changed after calling into accessors.
+        AssertNoContextChange ncc(it.isolate());
 
-            Handle<Object> accessors = it.GetAccessors();
+        Handle<Object> accessors = it.GetAccessors();
 
-            if (is_observed && accessors->IsAccessorInfo()) {
-              ASSIGN_RETURN_ON_EXCEPTION(
-                  it.isolate(), old_value,
-                  GetPropertyWithAccessor(it.GetReceiver(), it.name(),
-                                          it.GetHolder<JSObject>(), accessors),
-                  Object);
-            }
+        if (is_observed && accessors->IsAccessorInfo()) {
+          ASSIGN_RETURN_ON_EXCEPTION(
+              it.isolate(), old_value,
+              GetPropertyWithAccessor(it.GetReceiver(), it.name(),
+                                      it.GetHolder<JSObject>(), accessors),
+              Object);
+        }
 
-            // Special handling for ExecutableAccessorInfo, which behaves like a
-            // data property.
-            if (handling == DONT_FORCE_FIELD &&
-                accessors->IsExecutableAccessorInfo()) {
-              Handle<Object> result;
-              ASSIGN_RETURN_ON_EXCEPTION(
-                  it.isolate(), result,
-                  JSObject::SetPropertyWithAccessor(
-                      it.GetReceiver(), it.name(), value,
-                      it.GetHolder<JSObject>(), accessors, STRICT),
-                  Object);
-              DCHECK(result->SameValue(*value));
+        // Special handling for ExecutableAccessorInfo, which behaves like a
+        // data property.
+        if (handling == DONT_FORCE_FIELD &&
+            accessors->IsExecutableAccessorInfo()) {
+          Handle<Object> result;
+          ASSIGN_RETURN_ON_EXCEPTION(
+              it.isolate(), result,
+              JSObject::SetPropertyWithAccessor(it.GetReceiver(), it.name(),
+                                                value, it.GetHolder<JSObject>(),
+                                                accessors, STRICT),
+              Object);
+          DCHECK(result->SameValue(*value));
 
-              if (details.attributes() == attributes) {
-                // Regular property update if the attributes match.
-                if (is_observed && !old_value->SameValue(*value)) {
-                  // If we are setting the prototype of a function and are
-                  // observed, don't send change records because the prototype
-                  // handles that itself.
-                  if (!object->IsJSFunction() ||
-                      !Name::Equals(it.isolate()->factory()->prototype_string(),
-                                    name) ||
-                      !Handle<JSFunction>::cast(object)
-                           ->should_have_prototype()) {
-                    EnqueueChangeRecord(object, "update", name, old_value);
-                  }
-                }
-                return value;
+          if (details.attributes() == attributes) {
+            // Regular property update if the attributes match.
+            if (is_observed && !old_value->SameValue(*value)) {
+              // If we are setting the prototype of a function and are
+              // observed, don't send change records because the prototype
+              // handles that itself.
+              if (!object->IsJSFunction() ||
+                  !Name::Equals(it.isolate()->factory()->prototype_string(),
+                                name) ||
+                  !Handle<JSFunction>::cast(object)->should_have_prototype()) {
+                EnqueueChangeRecord(object, "update", name, old_value);
               }
-
-              // Reconfigure the accessor if attributes mismatch.
-              Handle<ExecutableAccessorInfo> new_data =
-                  Accessors::CloneAccessor(
-                      it.isolate(),
-                      Handle<ExecutableAccessorInfo>::cast(accessors));
-              new_data->set_property_attributes(attributes);
-              // By clearing the setter we don't have to introduce a lookup to
-              // the setter, simply make it unavailable to reflect the
-              // attributes.
-              if (attributes & READ_ONLY) new_data->clear_setter();
-              SetPropertyCallback(object, name, new_data, attributes);
-              if (is_observed) {
-                if (old_value->SameValue(*value)) {
-                  old_value = it.isolate()->factory()->the_hole_value();
-                }
-                EnqueueChangeRecord(object, "reconfigure", name, old_value);
-              }
-              return value;
             }
-
-            // Regular accessor. Reconfigure to data property.
-            break;
+            return value;
           }
 
-          case LookupIterator::DATA:
-            // Regular property update if the attributes match.
-            if (details.attributes() == attributes) {
-              return SetDataProperty(&it, value);
+          // Reconfigure the accessor if attributes mismatch.
+          Handle<ExecutableAccessorInfo> new_data = Accessors::CloneAccessor(
+              it.isolate(), Handle<ExecutableAccessorInfo>::cast(accessors));
+          new_data->set_property_attributes(attributes);
+          // By clearing the setter we don't have to introduce a lookup to
+          // the setter, simply make it unavailable to reflect the
+          // attributes.
+          if (attributes & READ_ONLY) new_data->clear_setter();
+          SetPropertyCallback(object, name, new_data, attributes);
+          if (is_observed) {
+            if (old_value->SameValue(*value)) {
+              old_value = it.isolate()->factory()->the_hole_value();
             }
-            // Reconfigure the data property if the attributes mismatch.
-            if (is_observed) old_value = it.GetDataValue();
+            EnqueueChangeRecord(object, "reconfigure", name, old_value);
+          }
+          return value;
         }
+
+        it.ReconfigureDataProperty(value, attributes);
+        it.PrepareForDataProperty(value);
+        it.WriteDataValue(value);
+
+        if (is_observed) {
+          if (old_value->SameValue(*value)) {
+            old_value = it.isolate()->factory()->the_hole_value();
+          }
+          EnqueueChangeRecord(object, "reconfigure", name, old_value);
+        }
+
+        return value;
+      }
+
+      case LookupIterator::DATA: {
+        PropertyDetails details = it.property_details();
+        Handle<Object> old_value = it.isolate()->factory()->the_hole_value();
+        // Regular property update if the attributes match.
+        if (details.attributes() == attributes) {
+          return SetDataProperty(&it, value);
+        }
+        // Reconfigure the data property if the attributes mismatch.
+        if (is_observed) old_value = it.GetDataValue();
 
         it.ReconfigureDataProperty(value, attributes);
         it.PrepareForDataProperty(value);
@@ -4012,7 +3976,7 @@ Maybe<PropertyAttributes> JSReceiver::GetOwnPropertyAttributes(
   if (object->IsJSObject() && name->AsArrayIndex(&index)) {
     return GetOwnElementAttribute(object, index);
   }
-  LookupIterator it(object, name, LookupIterator::CHECK_HIDDEN);
+  LookupIterator it(object, name, LookupIterator::HIDDEN);
   return GetPropertyAttributes(&it);
 }
 
@@ -4022,6 +3986,7 @@ Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
   for (; it->IsFound(); it->Next()) {
     switch (it->state()) {
       case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
         UNREACHABLE();
       case LookupIterator::JSPROXY:
         return JSProxy::GetPropertyAttributesWithHandler(
@@ -4037,11 +4002,9 @@ Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
       case LookupIterator::ACCESS_CHECK:
         if (it->HasAccess(v8::ACCESS_HAS)) break;
         return JSObject::GetPropertyAttributesWithFailedAccessCheck(it);
-      case LookupIterator::PROPERTY:
-        if (it->HasProperty()) {
-          return maybe(it->property_details().attributes());
-        }
-        break;
+      case LookupIterator::ACCESSOR:
+      case LookupIterator::DATA:
+        return maybe(it->property_details().attributes());
     }
   }
   return maybe(ABSENT);
@@ -4259,9 +4222,6 @@ void JSObject::MigrateFastToSlow(Handle<JSObject> object,
         dictionary = NameDictionary::Add(dictionary, key, value, d);
         break;
       }
-      case INTERCEPTOR:
-        break;
-      case HANDLER:
       case NORMAL:
         UNREACHABLE();
         break;
@@ -4443,9 +4403,15 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
 
 
 void JSObject::ResetElements(Handle<JSObject> object) {
-  Heap* heap = object->GetIsolate()->heap();
-  CHECK(object->map() != heap->sloppy_arguments_elements_map());
-  object->set_elements(object->map()->GetInitialElements());
+  Isolate* isolate = object->GetIsolate();
+  CHECK(object->map() != isolate->heap()->sloppy_arguments_elements_map());
+  if (object->map()->has_dictionary_elements()) {
+    Handle<SeededNumberDictionary> new_elements =
+        SeededNumberDictionary::New(isolate, 0);
+    object->set_elements(*new_elements);
+  } else {
+    object->set_elements(object->map()->GetInitialElements());
+  }
 }
 
 
@@ -4719,7 +4685,7 @@ void JSObject::DeleteHiddenProperty(Handle<JSObject> object, Handle<Name> key) {
 
 bool JSObject::HasHiddenProperties(Handle<JSObject> object) {
   Handle<Name> hidden = object->GetIsolate()->factory()->hidden_string();
-  LookupIterator it(object, hidden, LookupIterator::CHECK_PROPERTY);
+  LookupIterator it(object, hidden, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = GetPropertyAttributes(&it);
   // Cannot get an exception since the hidden_string isn't accessible to JS.
   DCHECK(maybe.has_value);
@@ -4754,12 +4720,9 @@ Object* JSObject::GetHiddenPropertiesHashTable() {
   } else {
     Isolate* isolate = GetIsolate();
     LookupIterator it(handle(this), isolate->factory()->hidden_string(),
-                      LookupIterator::CHECK_PROPERTY);
-    if (it.IsFound() && it.HasProperty()) {
-      DCHECK_EQ(LookupIterator::DATA, it.property_kind());
-      return *it.GetDataValue();
-    }
-    return GetHeap()->undefined_value();
+                      LookupIterator::OWN_SKIP_INTERCEPTOR);
+    // Access check is always skipped for the hidden string anyways.
+    return *GetDataProperty(&it);
   }
 }
 
@@ -4880,11 +4843,9 @@ MaybeHandle<Object> JSObject::DeleteElement(Handle<JSObject> object,
       // Deleting a non-configurable property in strict mode.
       Handle<Object> name = factory->NewNumberFromUint(index);
       Handle<Object> args[2] = { name, object };
-      Handle<Object> error =
-          factory->NewTypeError("strict_delete_property",
-                                HandleVector(args, 2));
-      isolate->Throw(*error);
-      return Handle<Object>();
+      THROW_NEW_ERROR(isolate, NewTypeError("strict_delete_property",
+                                            HandleVector(args, 2)),
+                      Object);
     }
     return factory->false_value();
   }
@@ -4950,19 +4911,20 @@ MaybeHandle<Object> JSObject::DeleteProperty(Handle<JSObject> object,
 
   // Skip interceptors on FORCE_DELETION.
   LookupIterator::Configuration config =
-      delete_mode == FORCE_DELETION
-          ? LookupIterator::CHECK_HIDDEN_SKIP_INTERCEPTOR
-          : LookupIterator::CHECK_HIDDEN;
+      delete_mode == FORCE_DELETION ? LookupIterator::HIDDEN_SKIP_INTERCEPTOR
+                                    : LookupIterator::HIDDEN;
 
   LookupIterator it(object, name, config);
 
   bool is_observed = object->map()->is_observed() &&
                      *name != it.isolate()->heap()->hidden_string();
+  Handle<Object> old_value = it.isolate()->factory()->the_hole_value();
 
   for (; it.IsFound(); it.Next()) {
     switch (it.state()) {
-      case LookupIterator::NOT_FOUND:
       case LookupIterator::JSPROXY:
+      case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
         UNREACHABLE();
       case LookupIterator::ACCESS_CHECK:
         if (it.HasAccess(v8::ACCESS_DELETE)) break;
@@ -4980,29 +4942,22 @@ MaybeHandle<Object> JSObject::DeleteProperty(Handle<JSObject> object,
         if (it.isolate()->has_pending_exception()) return maybe_result;
         break;
       }
-      case LookupIterator::PROPERTY: {
-        if (!it.HasProperty()) continue;
+      case LookupIterator::DATA:
+        if (is_observed) {
+          old_value = it.GetDataValue();
+        }
+      // Fall through.
+      case LookupIterator::ACCESSOR: {
         if (delete_mode != FORCE_DELETION && !it.IsConfigurable()) {
           // Fail if the property is not configurable.
           if (delete_mode == STRICT_DELETION) {
             Handle<Object> args[2] = {name, object};
-            Handle<Object> error = it.isolate()->factory()->NewTypeError(
-                "strict_delete_property", HandleVector(args, ARRAY_SIZE(args)));
-            it.isolate()->Throw(*error);
-            return Handle<Object>();
+            THROW_NEW_ERROR(it.isolate(),
+                            NewTypeError("strict_delete_property",
+                                         HandleVector(args, arraysize(args))),
+                            Object);
           }
           return it.isolate()->factory()->false_value();
-        }
-
-        Handle<Object> old_value;
-        if (is_observed) {
-          switch (it.property_kind()) {
-            case LookupIterator::ACCESSOR:
-              old_value = it.isolate()->factory()->the_hole_value();
-              break;
-            case LookupIterator::DATA:
-              old_value = it.GetDataValue();
-          }
         }
 
         PropertyNormalizationMode mode = object->map()->is_prototype_map()
@@ -5214,11 +5169,10 @@ MaybeHandle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
   // It's not possible to seal objects with external array elements
   if (object->HasExternalArrayElements() ||
       object->HasFixedTypedArrayElements()) {
-    Handle<Object> error  =
-        isolate->factory()->NewTypeError(
-            "cant_prevent_ext_external_array_elements",
-            HandleVector(&object, 1));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate,
+                    NewTypeError("cant_prevent_ext_external_array_elements",
+                                 HandleVector(&object, 1)),
+                    Object);
   }
 
   // If there are fast elements we normalize.
@@ -5297,11 +5251,10 @@ MaybeHandle<Object> JSObject::Freeze(Handle<JSObject> object) {
   // It's not possible to freeze objects with external array elements
   if (object->HasExternalArrayElements() ||
       object->HasFixedTypedArrayElements()) {
-    Handle<Object> error  =
-        isolate->factory()->NewTypeError(
-            "cant_prevent_ext_external_array_elements",
-            HandleVector(&object, 1));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate,
+                    NewTypeError("cant_prevent_ext_external_array_elements",
+                                 HandleVector(&object, 1)),
+                    Object);
   }
 
   Handle<SeededNumberDictionary> new_element_dictionary;
@@ -5710,58 +5663,6 @@ int Map::NextFreePropertyIndex() {
 }
 
 
-void JSReceiver::LookupOwn(Handle<Name> name, LookupResult* result) {
-  DisallowHeapAllocation no_gc;
-  DCHECK(name->IsName());
-
-  if (IsJSGlobalProxy()) {
-    PrototypeIterator iter(GetIsolate(), this);
-    if (iter.IsAtEnd()) return result->NotFound();
-    DCHECK(iter.GetCurrent()->IsJSGlobalObject());
-    return JSReceiver::cast(iter.GetCurrent())->LookupOwn(name, result);
-  }
-
-  if (IsJSProxy()) {
-    result->HandlerResult(JSProxy::cast(this));
-    return;
-  }
-
-  // Do not use inline caching if the object is a non-global object
-  // that requires access checks.
-  if (IsAccessCheckNeeded()) {
-    result->DisallowCaching();
-  }
-
-  JSObject* js_object = JSObject::cast(this);
-
-  // Check for lookup interceptor except when bootstrapping.
-  if (js_object->HasNamedInterceptor() &&
-      !GetIsolate()->bootstrapper()->IsActive()) {
-    result->InterceptorResult(js_object);
-    return;
-  }
-
-  js_object->LookupOwnRealNamedProperty(name, result);
-}
-
-
-void JSReceiver::Lookup(Handle<Name> name, LookupResult* result) {
-  DisallowHeapAllocation no_gc;
-  // Ecma-262 3rd 8.6.2.4
-  for (PrototypeIterator iter(GetIsolate(), this,
-                              PrototypeIterator::START_AT_RECEIVER);
-       !iter.IsAtEnd(); iter.Advance()) {
-    JSReceiver::cast(iter.GetCurrent())->LookupOwn(name, result);
-    if (result->IsFound()) return;
-    if (name->IsOwn()) {
-      result->NotFound();
-      return;
-    }
-  }
-  result->NotFound();
-}
-
-
 static bool ContainsOnlyValidKeys(Handle<FixedArray> array) {
   int len = array->length();
   for (int i = 0; i < len; i++) {
@@ -5904,7 +5805,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
           Execution::Call(isolate,
                           isolate->proxy_enumerate(),
                           object,
-                          ARRAY_SIZE(args),
+                          arraysize(args),
                           args),
           FixedArray);
       ASSIGN_RETURN_ON_EXCEPTION(
@@ -6232,11 +6133,10 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
             Object::GetElement(isolate, object, index).ToHandleChecked();
       }
     } else {
-      LookupIterator it(object, name,
-                        LookupIterator::CHECK_HIDDEN_SKIP_INTERCEPTOR);
+      LookupIterator it(object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
       CHECK(GetPropertyAttributes(&it).has_value);
       preexists = it.IsFound();
-      if (preexists && (it.property_kind() == LookupIterator::DATA ||
+      if (preexists && (it.state() == LookupIterator::DATA ||
                         it.GetAccessors()->IsAccessorInfo())) {
         old_value = GetProperty(&it).ToHandleChecked();
       }
@@ -6252,7 +6152,11 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
            setter->IsNull());
     // At least one of the accessors needs to be a new value.
     DCHECK(!getter->IsNull() || !setter->IsNull());
-    LookupIterator it(object, name, LookupIterator::CHECK_PROPERTY);
+    LookupIterator it(object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
+    if (it.state() == LookupIterator::ACCESS_CHECK) {
+      // We already did an access check before. We do have access.
+      it.Next();
+    }
     if (!getter->IsNull()) {
       it.TransitionToAccessorProperty(ACCESSOR_GETTER, getter, attributes);
     }
@@ -6335,8 +6239,7 @@ MaybeHandle<Object> JSObject::SetAccessor(Handle<JSObject> object,
     SetElementCallback(object, index, info, info->property_attributes());
   } else {
     // Lookup the name.
-    LookupIterator it(object, name,
-                      LookupIterator::CHECK_HIDDEN_SKIP_INTERCEPTOR);
+    LookupIterator it(object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
     CHECK(GetPropertyAttributes(&it).has_value);
     // ES5 forbids turning a property into an accessor if it's not
     // configurable. See 8.6.1 (Table 5).
@@ -6394,11 +6297,12 @@ MaybeHandle<Object> JSObject::GetAccessor(Handle<JSObject> object,
     }
   } else {
     LookupIterator it(object, name,
-                      LookupIterator::CHECK_DERIVED_SKIP_INTERCEPTOR);
+                      LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
     for (; it.IsFound(); it.Next()) {
       switch (it.state()) {
-        case LookupIterator::NOT_FOUND:
         case LookupIterator::INTERCEPTOR:
+        case LookupIterator::NOT_FOUND:
+        case LookupIterator::TRANSITION:
           UNREACHABLE();
 
         case LookupIterator::ACCESS_CHECK:
@@ -6411,20 +6315,16 @@ MaybeHandle<Object> JSObject::GetAccessor(Handle<JSObject> object,
         case LookupIterator::JSPROXY:
           return isolate->factory()->undefined_value();
 
-        case LookupIterator::PROPERTY:
-          if (!it.HasProperty()) continue;
-          switch (it.property_kind()) {
-            case LookupIterator::DATA:
-              continue;
-            case LookupIterator::ACCESSOR: {
-              Handle<Object> maybe_pair = it.GetAccessors();
-              if (maybe_pair->IsAccessorPair()) {
-                return handle(
-                    AccessorPair::cast(*maybe_pair)->GetComponent(component),
-                    isolate);
-              }
-            }
+        case LookupIterator::DATA:
+          continue;
+        case LookupIterator::ACCESSOR: {
+          Handle<Object> maybe_pair = it.GetAccessors();
+          if (maybe_pair->IsAccessorPair()) {
+            return handle(
+                AccessorPair::cast(*maybe_pair)->GetComponent(component),
+                isolate);
           }
+        }
       }
     }
   }
@@ -6760,30 +6660,26 @@ Handle<Map> Map::Copy(Handle<Map> map) {
 }
 
 
-Handle<Map> Map::Create(Handle<JSFunction> constructor,
-                        int extra_inobject_properties) {
-  Handle<Map> copy = Copy(handle(constructor->initial_map()));
+Handle<Map> Map::Create(Isolate* isolate, int inobject_properties) {
+  Handle<Map> copy = Copy(handle(isolate->object_function()->initial_map()));
 
-  // Check that we do not overflow the instance size when adding the
-  // extra inobject properties.
-  int instance_size_delta = extra_inobject_properties * kPointerSize;
-  int max_instance_size_delta =
-      JSObject::kMaxInstanceSize - copy->instance_size();
-  int max_extra_properties = max_instance_size_delta >> kPointerSizeLog2;
+  // Check that we do not overflow the instance size when adding the extra
+  // inobject properties. If the instance size overflows, we allocate as many
+  // properties as we can as inobject properties.
+  int max_extra_properties =
+      (JSObject::kMaxInstanceSize - JSObject::kHeaderSize) >> kPointerSizeLog2;
 
-  // If the instance size overflows, we allocate as many properties as we can as
-  // inobject properties.
-  if (extra_inobject_properties > max_extra_properties) {
-    instance_size_delta = max_instance_size_delta;
-    extra_inobject_properties = max_extra_properties;
+  if (inobject_properties > max_extra_properties) {
+    inobject_properties = max_extra_properties;
   }
 
+  int new_instance_size =
+      JSObject::kHeaderSize + kPointerSize * inobject_properties;
+
   // Adjust the map with the extra inobject properties.
-  int inobject_properties =
-      copy->inobject_properties() + extra_inobject_properties;
   copy->set_inobject_properties(inobject_properties);
   copy->set_unused_property_fields(inobject_properties);
-  copy->set_instance_size(copy->instance_size() + instance_size_delta);
+  copy->set_instance_size(new_instance_size);
   copy->set_visitor_id(StaticVisitorBase::GetVisitorId(*copy));
   return copy;
 }
@@ -6819,8 +6715,7 @@ bool DescriptorArray::CanHoldValue(int descriptor, Object* value) {
       return false;
 
     case NORMAL:
-    case INTERCEPTOR:
-    case HANDLER:
+      UNREACHABLE();
       break;
   }
 
@@ -6835,7 +6730,7 @@ Handle<Map> Map::PrepareForDataProperty(Handle<Map> map, int descriptor,
   if (map->is_dictionary_map()) return map;
 
   // Migrate to the newest map before storing the property.
-  if (map->is_deprecated()) map = Update(map);
+  map = Update(map);
 
   Handle<DescriptorArray> descriptors(map->instance_descriptors());
 
@@ -6857,8 +6752,8 @@ Handle<Map> Map::TransitionToDataProperty(Handle<Map> map, Handle<Name> name,
   // Dictionary maps can always have additional data properties.
   if (map->is_dictionary_map()) return map;
 
-  // Migrate to the newest map before transitioning to the new property.
-  if (map->is_deprecated()) map = Update(map);
+  // Migrate to the newest map before storing the property.
+  map = Update(map);
 
   int index = map->SearchTransition(*name);
   if (index != TransitionArray::kNotFound) {
@@ -6868,9 +6763,7 @@ Handle<Map> Map::TransitionToDataProperty(Handle<Map> map, Handle<Name> name,
     // TODO(verwaest): Handle attributes better.
     DescriptorArray* descriptors = transition->instance_descriptors();
     if (descriptors->GetDetails(descriptor).attributes() != attributes) {
-      return CopyGeneralizeAllRepresentations(transition, descriptor,
-                                              FORCE_FIELD, attributes,
-                                              "attributes mismatch");
+      return Map::Normalize(map, CLEAR_INOBJECT_PROPERTIES);
     }
 
     return Map::PrepareForDataProperty(transition, descriptor, value);
@@ -6925,7 +6818,7 @@ Handle<Map> Map::TransitionToAccessorProperty(Handle<Map> map,
   }
 
   // Migrate to the newest map before transitioning to the new property.
-  if (map->is_deprecated()) map = Update(map);
+  map = Update(map);
 
   PropertyNormalizationMode mode = map->is_prototype_map()
                                        ? KEEP_INOBJECT_PROPERTIES
@@ -7549,7 +7442,7 @@ class CodeCacheHashTableKey : public HashTableKey {
   CodeCacheHashTableKey(Handle<Name> name, Handle<Code> code)
       : name_(name), flags_(code->flags()), code_(code) { }
 
-  bool IsMatch(Object* other) V8_OVERRIDE {
+  bool IsMatch(Object* other) OVERRIDE {
     if (!other->IsFixedArray()) return false;
     FixedArray* pair = FixedArray::cast(other);
     Name* name = Name::cast(pair->get(0));
@@ -7564,16 +7457,16 @@ class CodeCacheHashTableKey : public HashTableKey {
     return name->Hash() ^ flags;
   }
 
-  uint32_t Hash() V8_OVERRIDE { return NameFlagsHashHelper(*name_, flags_); }
+  uint32_t Hash() OVERRIDE { return NameFlagsHashHelper(*name_, flags_); }
 
-  uint32_t HashForObject(Object* obj) V8_OVERRIDE {
+  uint32_t HashForObject(Object* obj) OVERRIDE {
     FixedArray* pair = FixedArray::cast(obj);
     Name* name = Name::cast(pair->get(0));
     Code* code = Code::cast(pair->get(1));
     return NameFlagsHashHelper(name, code->flags());
   }
 
-  MUST_USE_RESULT Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
+  MUST_USE_RESULT Handle<Object> AsHandle(Isolate* isolate) OVERRIDE {
     Handle<Code> code = code_.ToHandleChecked();
     Handle<FixedArray> pair = isolate->factory()->NewFixedArray(2);
     pair->set(0, *name_);
@@ -7677,7 +7570,7 @@ class PolymorphicCodeCacheHashTableKey : public HashTableKey {
       : maps_(maps),
         code_flags_(code_flags) {}
 
-  bool IsMatch(Object* other) V8_OVERRIDE {
+  bool IsMatch(Object* other) OVERRIDE {
     MapHandleList other_maps(kDefaultListAllocationSize);
     int other_flags;
     FromObject(other, &other_flags, &other_maps);
@@ -7712,18 +7605,18 @@ class PolymorphicCodeCacheHashTableKey : public HashTableKey {
     return hash;
   }
 
-  uint32_t Hash() V8_OVERRIDE {
+  uint32_t Hash() OVERRIDE {
     return MapsHashHelper(maps_, code_flags_);
   }
 
-  uint32_t HashForObject(Object* obj) V8_OVERRIDE {
+  uint32_t HashForObject(Object* obj) OVERRIDE {
     MapHandleList other_maps(kDefaultListAllocationSize);
     int other_flags;
     FromObject(obj, &other_flags, &other_maps);
     return MapsHashHelper(&other_maps, other_flags);
   }
 
-  MUST_USE_RESULT Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
+  MUST_USE_RESULT Handle<Object> AsHandle(Isolate* isolate) OVERRIDE {
     // The maps in |maps_| must be copied to a newly allocated FixedArray,
     // both because the referenced MapList is short-lived, and because C++
     // objects can't be stored in the heap anyway.
@@ -8012,17 +7905,11 @@ Object* AccessorPair::GetComponent(AccessorComponent component) {
 
 
 Handle<DeoptimizationInputData> DeoptimizationInputData::New(
-    Isolate* isolate, int deopt_entry_count, int return_patch_address_count,
-    PretenureFlag pretenure) {
-  DCHECK(deopt_entry_count + return_patch_address_count > 0);
-  Handle<FixedArray> deoptimization_data =
-      Handle<FixedArray>::cast(isolate->factory()->NewFixedArray(
-          LengthFor(deopt_entry_count, return_patch_address_count), pretenure));
-  deoptimization_data->set(kDeoptEntryCountIndex,
-                           Smi::FromInt(deopt_entry_count));
-  deoptimization_data->set(kReturnAddressPatchEntryCountIndex,
-                           Smi::FromInt(return_patch_address_count));
-  return Handle<DeoptimizationInputData>::cast(deoptimization_data);
+    Isolate* isolate, int deopt_entry_count, PretenureFlag pretenure) {
+  DCHECK(deopt_entry_count > 0);
+  return Handle<DeoptimizationInputData>::cast(
+      isolate->factory()->NewFixedArray(LengthFor(deopt_entry_count),
+                                        pretenure));
 }
 
 
@@ -8087,7 +7974,7 @@ String::FlatContent String::GetFlatContent() {
     if (shape.representation_tag() == kSeqStringTag) {
       start = SeqOneByteString::cast(string)->GetChars();
     } else {
-      start = ExternalAsciiString::cast(string)->GetChars();
+      start = ExternalOneByteString::cast(string)->GetChars();
     }
     return FlatContent(start + offset, length);
   } else {
@@ -8272,9 +8159,9 @@ FlatStringReader::FlatStringReader(Isolate* isolate, Handle<String> str)
 FlatStringReader::FlatStringReader(Isolate* isolate, Vector<const char> input)
     : Relocatable(isolate),
       str_(0),
-      is_ascii_(true),
+      is_one_byte_(true),
       length_(input.length()),
-      start_(input.start()) { }
+      start_(input.start()) {}
 
 
 void FlatStringReader::PostGarbageCollection() {
@@ -8285,8 +8172,8 @@ void FlatStringReader::PostGarbageCollection() {
   // This does not actually prevent the vector from being relocated later.
   String::FlatContent content = str->GetFlatContent();
   DCHECK(content.IsFlat());
-  is_ascii_ = content.IsAscii();
-  if (is_ascii_) {
+  is_one_byte_ = content.IsOneByte();
+  if (is_one_byte_) {
     start_ = content.ToOneByteVector().start();
   } else {
     start_ = content.ToUC16Vector().start();
@@ -8480,8 +8367,7 @@ void String::WriteToFlat(String* src,
     DCHECK(0 <= from && from <= to && to <= source->length());
     switch (StringShape(source).full_representation_tag()) {
       case kOneByteStringTag | kExternalStringTag: {
-        CopyChars(sink,
-                  ExternalAsciiString::cast(source)->GetChars() + from,
+        CopyChars(sink, ExternalOneByteString::cast(source)->GetChars() + from,
                   to - from);
         return;
       }
@@ -8527,7 +8413,7 @@ void String::WriteToFlat(String* src,
             String* second = cons_string->second();
             // When repeatedly appending to a string, we get a cons string that
             // is unbalanced to the left, a list, essentially.  We inline the
-            // common case of sequential ascii right child.
+            // common case of sequential one-byte right child.
             if (to - boundary == 1) {
               sink[boundary - from] = static_cast<sinkchar>(second->Get(0));
             } else if (second->IsSeqOneByteString()) {
@@ -8565,7 +8451,7 @@ static void CalculateLineEndsImpl(Isolate* isolate,
                                   Vector<const SourceChar> src,
                                   bool include_ending_line) {
   const int src_len = src.length();
-  StringSearch<uint8_t, SourceChar> search(isolate, STATIC_ASCII_VECTOR("\n"));
+  StringSearch<uint8_t, SourceChar> search(isolate, STATIC_CHAR_VECTOR("\n"));
 
   // Find and record line ends.
   int position = 0;
@@ -8595,7 +8481,7 @@ Handle<FixedArray> String::CalculateLineEnds(Handle<String> src,
     // Dispatch on type of strings.
     String::FlatContent content = src->GetFlatContent();
     DCHECK(content.IsFlat());
-    if (content.IsAscii()) {
+    if (content.IsOneByte()) {
       CalculateLineEndsImpl(isolate,
                             &line_ends,
                             content.ToOneByteVector(),
@@ -8622,36 +8508,7 @@ template <typename Char>
 static inline bool CompareRawStringContents(const Char* const a,
                                             const Char* const b,
                                             int length) {
-  int i = 0;
-#ifndef V8_HOST_CAN_READ_UNALIGNED
-  // If this architecture isn't comfortable reading unaligned ints
-  // then we have to check that the strings are aligned before
-  // comparing them blockwise.
-  const int kAlignmentMask = sizeof(uint32_t) - 1;  // NOLINT
-  uintptr_t pa_addr = reinterpret_cast<uintptr_t>(a);
-  uintptr_t pb_addr = reinterpret_cast<uintptr_t>(b);
-  if (((pa_addr & kAlignmentMask) | (pb_addr & kAlignmentMask)) == 0) {
-#endif
-    const int kStepSize = sizeof(int) / sizeof(Char);  // NOLINT
-    int endpoint = length - kStepSize;
-    // Compare blocks until we reach near the end of the string.
-    for (; i <= endpoint; i += kStepSize) {
-      uint32_t wa = *reinterpret_cast<const uint32_t*>(a + i);
-      uint32_t wb = *reinterpret_cast<const uint32_t*>(b + i);
-      if (wa != wb) {
-        return false;
-      }
-    }
-#ifndef V8_HOST_CAN_READ_UNALIGNED
-  }
-#endif
-  // Compare the remaining characters that didn't fit into a block.
-  for (; i < length; i++) {
-    if (a[i] != b[i]) {
-      return false;
-    }
-  }
-  return true;
+  return CompareChars(a, b, length) == 0;
 }
 
 
@@ -8882,7 +8739,7 @@ bool String::SlowEquals(Handle<String> one, Handle<String> two) {
   String::FlatContent flat1 = one->GetFlatContent();
   String::FlatContent flat2 = two->GetFlatContent();
 
-  if (flat1.IsAscii() && flat2.IsAscii()) {
+  if (flat1.IsOneByte() && flat2.IsOneByte()) {
       return CompareRawStringContents(flat1.ToOneByteVector().start(),
                                       flat2.ToOneByteVector().start(),
                                       one_length);
@@ -8903,8 +8760,8 @@ bool String::MarkAsUndetectable() {
   if (map == heap->string_map()) {
     this->set_map(heap->undetectable_string_map());
     return true;
-  } else if (map == heap->ascii_string_map()) {
-    this->set_map(heap->undetectable_ascii_string_map());
+  } else if (map == heap->one_byte_string_map()) {
+    this->set_map(heap->undetectable_one_byte_string_map());
     return true;
   }
   // Rest cannot be marked as undetectable
@@ -8947,7 +8804,7 @@ bool String::IsOneByteEqualTo(Vector<const uint8_t> str) {
   if (str.length() != slen) return false;
   DisallowHeapAllocation no_gc;
   FlatContent content = GetFlatContent();
-  if (content.IsAscii()) {
+  if (content.IsOneByte()) {
     return CompareChars(content.ToOneByteVector().start(),
                         str.start(), slen) == 0;
   }
@@ -9238,7 +9095,6 @@ void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
 
 
 void JSFunction::MarkForOptimization() {
-  DCHECK(is_compiled() || GetIsolate()->DebuggerHasBreakPoints());
   DCHECK(!IsOptimized());
   DCHECK(shared()->allows_lazy_compilation() ||
          code()->optimizable());
@@ -9257,7 +9113,7 @@ void JSFunction::MarkForConcurrentOptimization() {
   DCHECK(GetIsolate()->concurrent_recompilation_enabled());
   if (FLAG_trace_concurrent_recompilation) {
     PrintF("  ** Marking ");
-    PrintName();
+    ShortPrint();
     PrintF(" for concurrent recompilation.\n");
   }
   set_code_no_write_barrier(
@@ -9275,12 +9131,36 @@ void JSFunction::MarkInOptimizationQueue() {
   DCHECK(GetIsolate()->concurrent_recompilation_enabled());
   if (FLAG_trace_concurrent_recompilation) {
     PrintF("  ** Queueing ");
-    PrintName();
+    ShortPrint();
     PrintF(" for concurrent recompilation.\n");
   }
   set_code_no_write_barrier(
       GetIsolate()->builtins()->builtin(Builtins::kInOptimizationQueue));
   // No write barrier required, since the builtin is part of the root set.
+}
+
+
+Handle<JSFunction> JSFunction::CloneClosure(Handle<JSFunction> function) {
+  Isolate* isolate = function->GetIsolate();
+  Handle<Map> map(function->map());
+  Handle<SharedFunctionInfo> shared(function->shared());
+  Handle<Context> context(function->context());
+  Handle<JSFunction> clone =
+      isolate->factory()->NewFunctionFromSharedFunctionInfo(shared, context);
+
+  if (shared->bound()) {
+    clone->set_function_bindings(function->function_bindings());
+  }
+
+  // In typical case, __proto__ of ``function`` is the default Function
+  // prototype, which means that SetPrototype below is a no-op.
+  // In rare cases when that is not true, we mutate the clone's __proto__.
+  Handle<Object> original_prototype(map->prototype(), isolate);
+  if (*original_prototype != clone->map()->prototype()) {
+    JSObject::SetPrototype(clone, original_prototype, false).Assert();
+  }
+
+  return clone;
 }
 
 
@@ -9801,7 +9681,7 @@ Handle<Object> Script::GetNameOrSourceURL(Handle<Script> script) {
   Isolate* isolate = script->GetIsolate();
   Handle<String> name_or_source_url_key =
       isolate->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("nameOrSourceURL"));
+          STATIC_CHAR_VECTOR("nameOrSourceURL"));
   Handle<JSObject> script_wrapper = Script::GetWrapper(script);
   Handle<Object> property = Object::GetProperty(
       script_wrapper, name_or_source_url_key).ToHandleChecked();
@@ -10346,26 +10226,7 @@ int Code::SourceStatementPosition(Address pc) {
 
 SafepointEntry Code::GetSafepointEntry(Address pc) {
   SafepointTable table(this);
-  SafepointEntry entry = table.FindEntry(pc);
-  if (entry.is_valid() || !is_turbofanned()) {
-    return entry;
-  }
-
-  // If the code is turbofanned, we might be looking for
-  // an address that was patched by lazy deoptimization.
-  // In that case look through the patch table, try to
-  // lookup the original address there, and then use this
-  // to find the safepoint entry.
-  DeoptimizationInputData* deopt_data =
-      DeoptimizationInputData::cast(deoptimization_data());
-  intptr_t offset = pc - instruction_start();
-  for (int i = 0; i < deopt_data->ReturnAddressPatchCount(); i++) {
-    if (deopt_data->PatchedAddressPc(i)->value() == offset) {
-      int original_offset = deopt_data->ReturnAddressPc(i)->value();
-      return table.FindEntry(instruction_start() + original_offset);
-    }
-  }
-  return SafepointEntry();
+  return table.FindEntry(pc);
 }
 
 
@@ -10524,7 +10385,7 @@ void Code::ClearInlineCaches(Code::Kind* kind) {
 
 
 void SharedFunctionInfo::ClearTypeFeedbackInfo() {
-  FixedArray* vector = feedback_vector();
+  TypeFeedbackVector* vector = feedback_vector();
   Heap* heap = GetHeap();
   int length = vector->length();
 
@@ -10540,7 +10401,7 @@ void SharedFunctionInfo::ClearTypeFeedbackInfo() {
           break;
           // Fall through...
         default:
-          vector->set(i, TypeFeedbackInfo::RawUninitializedSentinel(heap),
+          vector->set(i, TypeFeedbackVector::RawUninitializedSentinel(heap),
                       SKIP_WRITE_BARRIER);
       }
     }
@@ -10918,19 +10779,6 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
       os << "\n";
     }
   }
-
-  int return_address_patch_count = ReturnAddressPatchCount();
-  if (return_address_patch_count != 0) {
-    os << "Return address patch data (count = " << return_address_patch_count
-       << ")\n";
-    os << " index    pc  patched_pc\n";
-  }
-  for (int i = 0; i < return_address_patch_count; i++) {
-    Vector<char> buf = Vector<char>::New(128);
-    SNPrintF(buf, "%6d  %6d  %12d\n", i, ReturnAddressPc(i)->value(),
-             PatchedAddressPc(i)->value());
-    os << buf.start();
-  }
 }
 
 
@@ -11008,14 +10856,11 @@ void Code::Disassemble(const char* name, OStream& os) {  // NOLINT
     }
     if (is_compare_ic_stub()) {
       DCHECK(CodeStub::GetMajorKey(this) == CodeStub::CompareIC);
-      CompareIC::State left_state, right_state, handler_state;
-      Token::Value op;
-      ICCompareStub::DecodeKey(stub_key(), &left_state, &right_state,
-                               &handler_state, &op);
-      os << "compare_state = " << CompareIC::GetStateName(left_state) << "*"
-         << CompareIC::GetStateName(right_state) << " -> "
-         << CompareIC::GetStateName(handler_state) << "\n";
-      os << "compare_operation = " << Token::Name(op) << "\n";
+      CompareICStub stub(stub_key(), GetIsolate());
+      os << "compare_state = " << CompareICState::GetStateName(stub.left())
+         << "*" << CompareICState::GetStateName(stub.right()) << " -> "
+         << CompareICState::GetStateName(stub.state()) << "\n";
+      os << "compare_operation = " << Token::Name(stub.op()) << "\n";
     }
   }
   if ((name != NULL) && (name[0] != '\0')) {
@@ -11027,7 +10872,10 @@ void Code::Disassemble(const char* name, OStream& os) {  // NOLINT
 
   os << "Instructions (size = " << instruction_size() << ")\n";
   // TODO(svenpanne) The Disassembler should use streams, too!
-  Disassembler::Decode(stdout, this);
+  {
+    CodeTracer::Scope trace_scope(GetIsolate()->GetCodeTracer());
+    Disassembler::Decode(trace_scope.file(), this);
+  }
   os << "\n";
 
   if (kind() == FUNCTION) {
@@ -11259,7 +11107,7 @@ static void EnqueueSpliceRecord(Handle<JSArray> object,
   Execution::Call(isolate,
                   Handle<JSFunction>(isolate->observers_enqueue_splice()),
                   isolate->factory()->undefined_value(),
-                  ARRAY_SIZE(args),
+                  arraysize(args),
                   args).Assert();
 }
 
@@ -11272,7 +11120,7 @@ static void BeginPerformSplice(Handle<JSArray> object) {
   Execution::Call(isolate,
                   Handle<JSFunction>(isolate->observers_begin_perform_splice()),
                   isolate->factory()->undefined_value(),
-                  ARRAY_SIZE(args),
+                  arraysize(args),
                   args).Assert();
 }
 
@@ -11285,7 +11133,7 @@ static void EndPerformSplice(Handle<JSArray> object) {
   Execution::Call(isolate,
                   Handle<JSFunction>(isolate->observers_end_perform_splice()),
                   isolate->factory()->undefined_value(),
-                  ARRAY_SIZE(args),
+                  arraysize(args),
                   args).Assert();
 }
 
@@ -11763,10 +11611,9 @@ const char* DependentCode::DependencyGroupName(DependencyGroup group) {
       return "allocation-site-tenuring-changed";
     case kAllocationSiteTransitionChangedGroup:
       return "allocation-site-transition-changed";
-    default:
-      UNREACHABLE();
-      return "?";
   }
+  UNREACHABLE();
+  return "?";
 }
 
 
@@ -11805,9 +11652,9 @@ MaybeHandle<Object> JSObject::SetPrototype(Handle<JSObject> object,
   // paragraph.
   if (!object->map()->is_extensible()) {
     Handle<Object> args[] = { object };
-    Handle<Object> error = isolate->factory()->NewTypeError(
-        "non_extensible_proto", HandleVector(args, ARRAY_SIZE(args)));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate, NewTypeError("non_extensible_proto",
+                                          HandleVector(args, arraysize(args))),
+                    Object);
   }
 
   // Before we can set the prototype we need to be sure
@@ -11819,9 +11666,9 @@ MaybeHandle<Object> JSObject::SetPrototype(Handle<JSObject> object,
        !iter.IsAtEnd(); iter.Advance()) {
     if (JSReceiver::cast(iter.GetCurrent()) == *object) {
       // Cycle detected.
-      Handle<Object> error = isolate->factory()->NewError(
-          "cyclic_proto", HandleVector<Object>(NULL, 0));
-      return isolate->Throw<Object>(error);
+      THROW_NEW_ERROR(isolate,
+                      NewError("cyclic_proto", HandleVector<Object>(NULL, 0)),
+                      Object);
     }
   }
 
@@ -12032,9 +11879,9 @@ MaybeHandle<Object> JSObject::SetElementWithCallback(Handle<JSObject> object,
       if (strict_mode == SLOPPY) return value;
       Handle<Object> key(isolate->factory()->NewNumberFromUint(index));
       Handle<Object> args[2] = { key, holder };
-      Handle<Object> error = isolate->factory()->NewTypeError(
-          "no_setter_in_callback", HandleVector(args, 2));
-      return isolate->Throw<Object>(error);
+      THROW_NEW_ERROR(
+          isolate, NewTypeError("no_setter_in_callback", HandleVector(args, 2)),
+          Object);
     }
   }
 
@@ -12243,10 +12090,9 @@ MaybeHandle<Object> JSObject::SetDictionaryElement(
         } else {
           Handle<Object> number = isolate->factory()->NewNumberFromUint(index);
           Handle<Object> args[2] = { number, object };
-          Handle<Object> error =
-              isolate->factory()->NewTypeError("strict_read_only_property",
-                                               HandleVector(args, 2));
-          return isolate->Throw<Object>(error);
+          THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
+                                                HandleVector(args, 2)),
+                          Object);
         }
       }
       // Elements of the arguments object in slow mode might be slow aliases.
@@ -12281,10 +12127,9 @@ MaybeHandle<Object> JSObject::SetDictionaryElement(
         Handle<Object> number = isolate->factory()->NewNumberFromUint(index);
         Handle<String> name = isolate->factory()->NumberToString(number);
         Handle<Object> args[1] = { name };
-        Handle<Object> error =
-            isolate->factory()->NewTypeError("object_not_extensible",
-                                             HandleVector(args, 1));
-        return isolate->Throw<Object>(error);
+        THROW_NEW_ERROR(isolate, NewTypeError("object_not_extensible",
+                                              HandleVector(args, 1)),
+                        Object);
       }
     }
 
@@ -12504,9 +12349,9 @@ MaybeHandle<Object> JSObject::SetElement(Handle<JSObject> object,
       set_mode == DEFINE_PROPERTY) {
     Handle<Object> number = isolate->factory()->NewNumberFromUint(index);
     Handle<Object> args[] = { object, number };
-    Handle<Object> error = isolate->factory()->NewTypeError(
-        "redef_external_array_element", HandleVector(args, ARRAY_SIZE(args)));
-    return isolate->Throw<Object>(error);
+    THROW_NEW_ERROR(isolate, NewTypeError("redef_external_array_element",
+                                          HandleVector(args, arraysize(args))),
+                    Object);
   }
 
   // Normalize the elements to enable attributes on the property.
@@ -12930,12 +12775,12 @@ void JSArray::JSArrayUpdateLengthFromIndex(Handle<JSArray> array,
 
 
 bool JSArray::IsReadOnlyLengthDescriptor(Handle<Map> jsarray_map) {
-    Isolate* isolate = jsarray_map->GetIsolate();
-    DCHECK(!jsarray_map->is_dictionary_map());
-    LookupResult lookup(isolate);
-    Handle<Name> length_string = isolate->factory()->length_string();
-    jsarray_map->LookupDescriptor(NULL, *length_string, &lookup);
-    return lookup.IsReadOnly();
+  Isolate* isolate = jsarray_map->GetIsolate();
+  DCHECK(!jsarray_map->is_dictionary_map());
+  LookupResult lookup(isolate);
+  Handle<Name> length_string = isolate->factory()->length_string();
+  jsarray_map->LookupDescriptor(NULL, *length_string, &lookup);
+  return lookup.IsReadOnly();
 }
 
 
@@ -12945,9 +12790,10 @@ bool JSArray::WouldChangeReadOnlyLength(Handle<JSArray> array,
   CHECK(array->length()->ToArrayIndex(&length));
   if (length <= index) {
     LookupIterator it(array, array->GetIsolate()->factory()->length_string(),
-                      LookupIterator::CHECK_PROPERTY);
+                      LookupIterator::OWN_SKIP_INTERCEPTOR);
+    CHECK_NE(LookupIterator::ACCESS_CHECK, it.state());
     CHECK(it.IsFound());
-    CHECK(it.HasProperty());
+    CHECK_EQ(LookupIterator::ACCESSOR, it.state());
     return it.IsReadOnly();
   }
   return false;
@@ -12958,9 +12804,9 @@ MaybeHandle<Object> JSArray::ReadOnlyLengthError(Handle<JSArray> array) {
   Isolate* isolate = array->GetIsolate();
   Handle<Name> length = isolate->factory()->length_string();
   Handle<Object> args[2] = { length, array };
-  Handle<Object> error = isolate->factory()->NewTypeError(
-      "strict_read_only_property", HandleVector(args, ARRAY_SIZE(args)));
-  return isolate->Throw<Object>(error);
+  THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
+                                        HandleVector(args, arraysize(args))),
+                  Object);
 }
 
 
@@ -13332,7 +13178,7 @@ MaybeHandle<JSObject> JSObject::GetKeysForIndexedInterceptor(
 
 Maybe<bool> JSObject::HasRealNamedProperty(Handle<JSObject> object,
                                            Handle<Name> key) {
-  LookupIterator it(object, key, LookupIterator::CHECK_ACCESS_CHECK);
+  LookupIterator it(object, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe_result = GetPropertyAttributes(&it);
   if (!maybe_result.has_value) return Maybe<bool>();
   return maybe(it.IsFound());
@@ -13370,10 +13216,10 @@ Maybe<bool> JSObject::HasRealElementProperty(Handle<JSObject> object,
 
 Maybe<bool> JSObject::HasRealNamedCallbackProperty(Handle<JSObject> object,
                                                    Handle<Name> key) {
-  LookupIterator it(object, key, LookupIterator::CHECK_ACCESS_CHECK);
+  LookupIterator it(object, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe_result = GetPropertyAttributes(&it);
   if (!maybe_result.has_value) return Maybe<bool>();
-  return maybe(it.IsFound() && it.property_kind() == LookupIterator::ACCESSOR);
+  return maybe(it.state() == LookupIterator::ACCESSOR);
 }
 
 
@@ -13690,7 +13536,7 @@ class StringSharedKey : public HashTableKey {
         strict_mode_(strict_mode),
         scope_position_(scope_position) { }
 
-  bool IsMatch(Object* other) V8_OVERRIDE {
+  bool IsMatch(Object* other) OVERRIDE {
     DisallowHeapAllocation no_allocation;
     if (!other->IsFixedArray()) return false;
     FixedArray* other_array = FixedArray::cast(other);
@@ -13725,12 +13571,12 @@ class StringSharedKey : public HashTableKey {
     return hash;
   }
 
-  uint32_t Hash() V8_OVERRIDE {
+  uint32_t Hash() OVERRIDE {
     return StringSharedHashHelper(*source_, *shared_, strict_mode_,
                                   scope_position_);
   }
 
-  uint32_t HashForObject(Object* obj) V8_OVERRIDE {
+  uint32_t HashForObject(Object* obj) OVERRIDE {
     DisallowHeapAllocation no_allocation;
     FixedArray* other_array = FixedArray::cast(obj);
     SharedFunctionInfo* shared = SharedFunctionInfo::cast(other_array->get(0));
@@ -13744,7 +13590,7 @@ class StringSharedKey : public HashTableKey {
   }
 
 
-  Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
+  Handle<Object> AsHandle(Isolate* isolate) OVERRIDE {
     Handle<FixedArray> array = isolate->factory()->NewFixedArray(4);
     array->set(0, *shared_);
     array->set(1, *source_);
@@ -13772,22 +13618,22 @@ class RegExpKey : public HashTableKey {
   // stored value is stored where the key should be.  IsMatch then
   // compares the search key to the found object, rather than comparing
   // a key to a key.
-  bool IsMatch(Object* obj) V8_OVERRIDE {
+  bool IsMatch(Object* obj) OVERRIDE {
     FixedArray* val = FixedArray::cast(obj);
     return string_->Equals(String::cast(val->get(JSRegExp::kSourceIndex)))
         && (flags_ == val->get(JSRegExp::kFlagsIndex));
   }
 
-  uint32_t Hash() V8_OVERRIDE { return RegExpHash(*string_, flags_); }
+  uint32_t Hash() OVERRIDE { return RegExpHash(*string_, flags_); }
 
-  Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
+  Handle<Object> AsHandle(Isolate* isolate) OVERRIDE {
     // Plain hash maps, which is where regexp keys are used, don't
     // use this function.
     UNREACHABLE();
     return MaybeHandle<Object>().ToHandleChecked();
   }
 
-  uint32_t HashForObject(Object* obj) V8_OVERRIDE {
+  uint32_t HashForObject(Object* obj) OVERRIDE {
     FixedArray* val = FixedArray::cast(obj);
     return RegExpHash(String::cast(val->get(JSRegExp::kSourceIndex)),
                       Smi::cast(val->get(JSRegExp::kFlagsIndex)));
@@ -13833,17 +13679,17 @@ class InternalizedStringKey : public HashTableKey {
   explicit InternalizedStringKey(Handle<String> string)
       : string_(string) { }
 
-  virtual bool IsMatch(Object* string) V8_OVERRIDE {
+  virtual bool IsMatch(Object* string) OVERRIDE {
     return String::cast(string)->Equals(*string_);
   }
 
-  virtual uint32_t Hash() V8_OVERRIDE { return string_->Hash(); }
+  virtual uint32_t Hash() OVERRIDE { return string_->Hash(); }
 
-  virtual uint32_t HashForObject(Object* other) V8_OVERRIDE {
+  virtual uint32_t HashForObject(Object* other) OVERRIDE {
     return String::cast(other)->Hash();
   }
 
-  virtual Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
+  virtual Handle<Object> AsHandle(Isolate* isolate) OVERRIDE {
     // Internalize the string if possible.
     MaybeHandle<Map> maybe_map =
         isolate->factory()->InternalizedStringMapForString(string_);
@@ -13887,7 +13733,7 @@ Handle<Derived> HashTable<Derived, Shape, Key>::New(
     MinimumCapacity capacity_option,
     PretenureFlag pretenure) {
   DCHECK(0 <= at_least_space_for);
-  DCHECK(!capacity_option || IsPowerOf2(at_least_space_for));
+  DCHECK(!capacity_option || base::bits::IsPowerOfTwo32(at_least_space_for));
   int capacity = (capacity_option == USE_CUSTOM_MINIMUM_CAPACITY)
                      ? at_least_space_for
                      : ComputeCapacity(at_least_space_for);
@@ -14701,13 +14547,6 @@ Handle<Object> ExternalFloat64Array::SetValue(
 }
 
 
-PropertyCell* GlobalObject::GetPropertyCell(LookupResult* result) {
-  DCHECK(!HasFastProperties());
-  Object* value = property_dictionary()->ValueAt(result->GetDictionaryEntry());
-  return PropertyCell::cast(value);
-}
-
-
 Handle<PropertyCell> JSGlobalObject::EnsurePropertyCell(
     Handle<JSGlobalObject> global,
     Handle<Name> name) {
@@ -14767,7 +14606,7 @@ class TwoCharHashTableKey : public HashTableKey {
 #endif
   }
 
-  bool IsMatch(Object* o) V8_OVERRIDE {
+  bool IsMatch(Object* o) OVERRIDE {
     if (!o->IsString()) return false;
     String* other = String::cast(o);
     if (other->length() != 2) return false;
@@ -14775,13 +14614,13 @@ class TwoCharHashTableKey : public HashTableKey {
     return other->Get(1) == c2_;
   }
 
-  uint32_t Hash() V8_OVERRIDE { return hash_; }
-  uint32_t HashForObject(Object* key) V8_OVERRIDE {
+  uint32_t Hash() OVERRIDE { return hash_; }
+  uint32_t HashForObject(Object* key) OVERRIDE {
     if (!key->IsString()) return 0;
     return String::cast(key)->Hash();
   }
 
-  Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
+  Handle<Object> AsHandle(Isolate* isolate) OVERRIDE {
     // The TwoCharHashTableKey is only used for looking in the string
     // table, not for adding to it.
     UNREACHABLE();
@@ -14979,7 +14818,7 @@ class StringsKey : public HashTableKey {
  public:
   explicit StringsKey(Handle<FixedArray> strings) : strings_(strings) { }
 
-  bool IsMatch(Object* strings) V8_OVERRIDE {
+  bool IsMatch(Object* strings) OVERRIDE {
     FixedArray* o = FixedArray::cast(strings);
     int len = strings_->length();
     if (o->length() != len) return false;
@@ -14989,9 +14828,9 @@ class StringsKey : public HashTableKey {
     return true;
   }
 
-  uint32_t Hash() V8_OVERRIDE { return HashForObject(*strings_); }
+  uint32_t Hash() OVERRIDE { return HashForObject(*strings_); }
 
-  uint32_t HashForObject(Object* obj) V8_OVERRIDE {
+  uint32_t HashForObject(Object* obj) OVERRIDE {
     FixedArray* strings = FixedArray::cast(obj);
     int len = strings->length();
     uint32_t hash = 0;
@@ -15001,7 +14840,7 @@ class StringsKey : public HashTableKey {
     return hash;
   }
 
-  Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE { return strings_; }
+  Handle<Object> AsHandle(Isolate* isolate) OVERRIDE { return strings_; }
 
  private:
   Handle<FixedArray> strings_;
@@ -15551,7 +15390,7 @@ Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Allocate(
   // from number of buckets. If we decide to change kLoadFactor
   // to something other than 2, capacity should be stored as another
   // field of this object.
-  capacity = RoundUpToPowerOf2(Max(kMinCapacity, capacity));
+  capacity = base::bits::RoundUpToPowerOfTwo32(Max(kMinCapacity, capacity));
   if (capacity > kMaxCapacity) {
     v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
   }
@@ -16520,17 +16359,5 @@ void PropertyCell::AddDependentCompilationInfo(Handle<PropertyCell> cell,
   info->dependencies(DependentCode::kPropertyCellChangedGroup)->Add(
       cell, info->zone());
 }
-
-
-const char* GetBailoutReason(BailoutReason reason) {
-  DCHECK(reason < kLastErrorMessage);
-#define ERROR_MESSAGES_TEXTS(C, T) T,
-  static const char* error_messages_[] = {
-      ERROR_MESSAGES_LIST(ERROR_MESSAGES_TEXTS)
-  };
-#undef ERROR_MESSAGES_TEXTS
-  return error_messages_[reason];
-}
-
 
 } }  // namespace v8::internal

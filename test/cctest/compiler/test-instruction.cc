@@ -9,6 +9,7 @@
 #include "src/compiler/common-operator.h"
 #include "src/compiler/graph.h"
 #include "src/compiler/instruction.h"
+#include "src/compiler/linkage.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node.h"
 #include "src/compiler/operator.h"
@@ -32,7 +33,6 @@ class InstructionTester : public HandleAndZoneScope {
         info(static_cast<HydrogenCodeStub*>(NULL), main_isolate()),
         linkage(&info),
         common(zone()),
-        machine(zone()),
         code(NULL) {}
 
   ~InstructionTester() { delete code; }
@@ -324,9 +324,9 @@ TEST(InstructionOperands) {
       new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
       new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER)};
 
-  for (size_t i = 0; i < ARRAY_SIZE(outputs); i++) {
-    for (size_t j = 0; j < ARRAY_SIZE(inputs); j++) {
-      for (size_t k = 0; k < ARRAY_SIZE(temps); k++) {
+  for (size_t i = 0; i < arraysize(outputs); i++) {
+    for (size_t j = 0; j < arraysize(inputs); j++) {
+      for (size_t k = 0; k < arraysize(temps); k++) {
         TestInstr* m =
             TestInstr::New(&zone, 101, i, outputs, j, inputs, k, temps);
         CHECK(i == m->OutputCount());

@@ -5,7 +5,6 @@ include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_MODULE := v8_tools_gyp_v8_libbase_gyp
 LOCAL_MODULE_SUFFIX := .a
-LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
@@ -25,13 +24,16 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	v8/src/base/atomicops_internals_x86_gcc.cc \
+	v8/src/base/bits.cc \
 	v8/src/base/cpu.cc \
+	v8/src/base/division-by-constant.cc \
 	v8/src/base/logging.cc \
 	v8/src/base/once.cc \
 	v8/src/base/platform/time.cc \
 	v8/src/base/platform/condition-variable.cc \
 	v8/src/base/platform/mutex.cc \
 	v8/src/base/platform/semaphore.cc \
+	v8/src/base/sys-info.cc \
 	v8/src/base/utils/random-number-generator.cc \
 	v8/src/base/platform/platform-posix.cc \
 	v8/src/base/platform/platform-linux.cc
@@ -40,7 +42,6 @@ LOCAL_SRC_FILES := \
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Debug := \
 	--param=ssp-buffer-size=4 \
-	-fno-exceptions \
 	-fno-strict-aliasing \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
@@ -66,6 +67,7 @@ MY_CFLAGS_Debug := \
 	-Wno-sequence-point \
 	-Os \
 	-g \
+	-gdwarf-4 \
 	-fdata-sections \
 	-ffunction-sections \
 	-funwind-tables
@@ -88,11 +90,13 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
-	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="https://proxy-dev.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_DEV_FALLBACK_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
 	'-DV8_TARGET_ARCH_ARM64' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
@@ -124,6 +128,7 @@ LOCAL_C_INCLUDES_Debug := \
 
 # Flags passed to only C++ (and not C) files.
 LOCAL_CPPFLAGS_Debug := \
+	-fno-exceptions \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -139,7 +144,6 @@ LOCAL_CPPFLAGS_Debug := \
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Release := \
 	--param=ssp-buffer-size=4 \
-	-fno-exceptions \
 	-fno-strict-aliasing \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
@@ -189,11 +193,13 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
-	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="https://proxy-dev.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_DEV_FALLBACK_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
 	'-DV8_TARGET_ARCH_ARM64' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
@@ -220,6 +226,7 @@ LOCAL_C_INCLUDES_Release := \
 
 # Flags passed to only C++ (and not C) files.
 LOCAL_CPPFLAGS_Release := \
+	-fno-exceptions \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -237,42 +244,6 @@ LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CO
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
-
-LOCAL_LDFLAGS_Debug := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
-	-Wl,--fatal-warnings \
-	-Wl,-z,noexecstack \
-	-fPIC \
-	-nostdlib \
-	-Wl,--no-undefined \
-	-Wl,--exclude-libs=ALL \
-	-Wl,--warn-shared-textrel \
-	-Wl,-O1 \
-	-Wl,--as-needed
-
-
-LOCAL_LDFLAGS_Release := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
-	-Wl,--fatal-warnings \
-	-Wl,-z,noexecstack \
-	-fPIC \
-	-nostdlib \
-	-Wl,--no-undefined \
-	-Wl,--exclude-libs=ALL \
-	-Wl,-O1 \
-	-Wl,--as-needed \
-	-Wl,--gc-sections \
-	-Wl,--warn-shared-textrel
-
-
-LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
-
-LOCAL_STATIC_LIBRARIES :=
-
-# Enable grouping to fix circular references
-LOCAL_GROUP_STATIC_LIBRARIES := true
 
 LOCAL_SHARED_LIBRARIES := \
 	libstlport \

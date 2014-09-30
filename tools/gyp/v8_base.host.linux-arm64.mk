@@ -5,7 +5,6 @@ include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := STATIC_LIBRARIES
 LOCAL_MODULE := v8_tools_gyp_v8_base_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 LOCAL_MODULE_SUFFIX := .a
-LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
 LOCAL_MULTILIB := $(GYP_HOST_MULTILIB)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_HOST_VAR_PREFIX))
@@ -35,19 +34,24 @@ LOCAL_SRC_FILES := \
 	v8/src/assert-scope.cc \
 	v8/src/ast-value-factory.cc \
 	v8/src/ast.cc \
+	v8/src/background-parsing-task.cc \
+	v8/src/bailout-reason.cc \
 	v8/src/bignum-dtoa.cc \
 	v8/src/bignum.cc \
 	v8/src/bootstrapper.cc \
 	v8/src/builtins.cc \
 	v8/src/cached-powers.cc \
 	v8/src/checks.cc \
+	v8/src/code-factory.cc \
 	v8/src/code-stubs.cc \
 	v8/src/code-stubs-hydrogen.cc \
 	v8/src/codegen.cc \
 	v8/src/compilation-cache.cc \
+	v8/src/compiler/access-builder.cc \
 	v8/src/compiler/ast-graph-builder.cc \
 	v8/src/compiler/change-lowering.cc \
 	v8/src/compiler/code-generator.cc \
+	v8/src/compiler/common-operator.cc \
 	v8/src/compiler/control-builders.cc \
 	v8/src/compiler/gap-resolver.cc \
 	v8/src/compiler/graph-builder.cc \
@@ -57,6 +61,7 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/graph.cc \
 	v8/src/compiler/instruction-selector.cc \
 	v8/src/compiler/instruction.cc \
+	v8/src/compiler/js-builtin-reducer.cc \
 	v8/src/compiler/js-context-specialization.cc \
 	v8/src/compiler/js-generic-lowering.cc \
 	v8/src/compiler/js-graph.cc \
@@ -64,18 +69,22 @@ LOCAL_SRC_FILES := \
 	v8/src/compiler/js-typed-lowering.cc \
 	v8/src/compiler/linkage.cc \
 	v8/src/compiler/machine-operator-reducer.cc \
+	v8/src/compiler/machine-operator.cc \
 	v8/src/compiler/machine-type.cc \
 	v8/src/compiler/node-cache.cc \
 	v8/src/compiler/node.cc \
+	v8/src/compiler/operator.cc \
 	v8/src/compiler/pipeline.cc \
 	v8/src/compiler/raw-machine-assembler.cc \
 	v8/src/compiler/register-allocator.cc \
 	v8/src/compiler/schedule.cc \
 	v8/src/compiler/scheduler.cc \
 	v8/src/compiler/simplified-lowering.cc \
+	v8/src/compiler/simplified-operator-reducer.cc \
+	v8/src/compiler/simplified-operator.cc \
 	v8/src/compiler/source-position.cc \
-	v8/src/compiler/structured-machine-assembler.cc \
 	v8/src/compiler/typer.cc \
+	v8/src/compiler/value-numbering-reducer.cc \
 	v8/src/compiler/verifier.cc \
 	v8/src/compiler.cc \
 	v8/src/contexts.cc \
@@ -100,7 +109,6 @@ LOCAL_SRC_FILES := \
 	v8/src/extensions/trigger-failure-extension.cc \
 	v8/src/factory.cc \
 	v8/src/fast-dtoa.cc \
-	v8/src/field-index.cc \
 	v8/src/fixed-dtoa.cc \
 	v8/src/flags.cc \
 	v8/src/frames.cc \
@@ -147,8 +155,14 @@ LOCAL_SRC_FILES := \
 	v8/src/hydrogen-uint32-analysis.cc \
 	v8/src/i18n.cc \
 	v8/src/icu_util.cc \
-	v8/src/ic.cc \
+	v8/src/ic/access-compiler.cc \
+	v8/src/ic/call-optimization.cc \
+	v8/src/ic/handler-compiler.cc \
+	v8/src/ic/ic-state.cc \
+	v8/src/ic/ic.cc \
+	v8/src/ic/ic-compiler.cc \
 	v8/src/interface.cc \
+	v8/src/interface-descriptors.cc \
 	v8/src/interpreter-irregexp.cc \
 	v8/src/isolate.cc \
 	v8/src/jsregexp.cc \
@@ -190,9 +204,10 @@ LOCAL_SRC_FILES := \
 	v8/src/string-search.cc \
 	v8/src/string-stream.cc \
 	v8/src/strtod.cc \
-	v8/src/stub-cache.cc \
+	v8/src/ic/stub-cache.cc \
 	v8/src/token.cc \
 	v8/src/transitions.cc \
+	v8/src/type-feedback-vector.cc \
 	v8/src/type-info.cc \
 	v8/src/types.cc \
 	v8/src/typing.cc \
@@ -216,20 +231,24 @@ LOCAL_SRC_FILES := \
 	v8/src/arm64/disasm-arm64.cc \
 	v8/src/arm64/frames-arm64.cc \
 	v8/src/arm64/full-codegen-arm64.cc \
-	v8/src/arm64/ic-arm64.cc \
 	v8/src/arm64/instructions-arm64.cc \
 	v8/src/arm64/instrument-arm64.cc \
+	v8/src/arm64/interface-descriptors-arm64.cc \
 	v8/src/arm64/lithium-arm64.cc \
 	v8/src/arm64/lithium-codegen-arm64.cc \
 	v8/src/arm64/lithium-gap-resolver-arm64.cc \
 	v8/src/arm64/macro-assembler-arm64.cc \
 	v8/src/arm64/regexp-macro-assembler-arm64.cc \
 	v8/src/arm64/simulator-arm64.cc \
-	v8/src/arm64/stub-cache-arm64.cc \
 	v8/src/arm64/utils-arm64.cc \
 	v8/src/compiler/arm64/code-generator-arm64.cc \
 	v8/src/compiler/arm64/instruction-selector-arm64.cc \
-	v8/src/compiler/arm64/linkage-arm64.cc
+	v8/src/compiler/arm64/linkage-arm64.cc \
+	v8/src/ic/arm64/access-compiler-arm64.cc \
+	v8/src/ic/arm64/handler-compiler-arm64.cc \
+	v8/src/ic/arm64/ic-arm64.cc \
+	v8/src/ic/arm64/ic-compiler-arm64.cc \
+	v8/src/ic/arm64/stub-cache-arm64.cc
 
 
 # Flags passed to both C and C++ files.
@@ -237,18 +256,25 @@ MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	-pthread \
-	-fno-exceptions \
 	-fno-strict-aliasing \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unused-local-typedefs \
 	-Wno-format \
+	-Wheader-hygiene \
+	-Wno-char-subscripts \
+	-Wno-unneeded-internal-declaration \
+	-Wno-covered-switch-default \
+	-Wstring-conversion \
+	-Wno-c++11-narrowing \
+	-Wno-deprecated-register \
+	-Wno-unused-local-typedef \
 	-m64 \
 	-Os \
 	-g \
+	-gdwarf-4 \
 	-fdata-sections \
 	-ffunction-sections \
 	-funwind-tables
@@ -271,11 +297,13 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
-	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="https://proxy-dev.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_DEV_FALLBACK_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
 	'-DV8_TARGET_ARCH_ARM64' \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
@@ -305,10 +333,12 @@ LOCAL_C_INCLUDES_Debug := \
 
 # Flags passed to only C++ (and not C) files.
 LOCAL_CPPFLAGS_Debug := \
+	-fno-exceptions \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated
+	-Wno-deprecated \
+	-std=gnu++11
 
 
 # Flags passed to both C and C++ files.
@@ -316,15 +346,21 @@ MY_CFLAGS_Release := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	-pthread \
-	-fno-exceptions \
 	-fno-strict-aliasing \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-unused-local-typedefs \
 	-Wno-format \
+	-Wheader-hygiene \
+	-Wno-char-subscripts \
+	-Wno-unneeded-internal-declaration \
+	-Wno-covered-switch-default \
+	-Wstring-conversion \
+	-Wno-c++11-narrowing \
+	-Wno-deprecated-register \
+	-Wno-unused-local-typedef \
 	-m64 \
 	-fno-ident \
 	-fdata-sections \
@@ -352,11 +388,13 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
-	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="https://proxy-dev.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_DEV_FALLBACK_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
 	'-DV8_TARGET_ARCH_ARM64' \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
@@ -381,10 +419,12 @@ LOCAL_C_INCLUDES_Release := \
 
 # Flags passed to only C++ (and not C) files.
 LOCAL_CPPFLAGS_Release := \
+	-fno-exceptions \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated
+	-Wno-deprecated \
+	-std=gnu++11
 
 
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
@@ -394,32 +434,6 @@ LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CO
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
-
-LOCAL_LDFLAGS_Debug := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
-	-pthread \
-	-fPIC \
-	-m64
-
-
-LOCAL_LDFLAGS_Release := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
-	-pthread \
-	-fPIC \
-	-m64
-
-
-LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
-
-LOCAL_STATIC_LIBRARIES :=
-
-# Enable grouping to fix circular references
-LOCAL_GROUP_STATIC_LIBRARIES := true
-
-LOCAL_SHARED_LIBRARIES :=
-
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
 gyp_all_modules: v8_tools_gyp_v8_base_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp

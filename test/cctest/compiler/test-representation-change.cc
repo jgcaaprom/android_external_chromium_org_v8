@@ -25,13 +25,16 @@ class RepresentationChangerTester : public HandleAndZoneScope,
   explicit RepresentationChangerTester(int num_parameters = 0)
       : GraphAndBuilders(main_zone()),
         typer_(main_zone()),
-        jsgraph_(main_graph_, &main_common_, &typer_),
-        changer_(&jsgraph_, &main_simplified_, &main_machine_, main_isolate()) {
+        javascript_(main_zone()),
+        jsgraph_(main_graph_, &main_common_, &javascript_, &typer_,
+                 &main_machine_),
+        changer_(&jsgraph_, &main_simplified_, main_isolate()) {
     Node* s = graph()->NewNode(common()->Start(num_parameters));
     graph()->SetStart(s);
   }
 
   Typer typer_;
+  JSOperatorBuilder javascript_;
   JSGraph jsgraph_;
   RepresentationChanger changer_;
 
@@ -43,19 +46,19 @@ class RepresentationChangerTester : public HandleAndZoneScope,
 
   // TODO(titzer): use ValueChecker / ValueUtil
   void CheckInt32Constant(Node* n, int32_t expected) {
-    ValueMatcher<int32_t> m(n);
+    Int32Matcher m(n);
     CHECK(m.HasValue());
     CHECK_EQ(expected, m.Value());
   }
 
-  void CheckHeapConstant(Node* n, Object* expected) {
-    ValueMatcher<Handle<Object> > m(n);
+  void CheckHeapConstant(Node* n, HeapObject* expected) {
+    HeapObjectMatcher<HeapObject> m(n);
     CHECK(m.HasValue());
-    CHECK_EQ(expected, *m.Value());
+    CHECK_EQ(expected, *m.Value().handle());
   }
 
   void CheckNumberConstant(Node* n, double expected) {
-    ValueMatcher<double> m(n);
+    NumberMatcher m(n);
     CHECK_EQ(IrOpcode::kNumberConstant, n->opcode());
     CHECK(m.HasValue());
     CHECK_EQ(expected, m.Value());
@@ -85,6 +88,7 @@ class RepresentationChangerTester : public HandleAndZoneScope,
 }  // namespace v8::internal::compiler
 
 
+// TODO(titzer): add kRepFloat32 when fully supported.
 static const MachineType all_reps[] = {kRepBit, kRepWord32, kRepWord64,
                                        kRepFloat64, kRepTagged};
 
@@ -138,20 +142,20 @@ TEST(BitToBool_constant) {
 TEST(ToTagged_constant) {
   RepresentationChangerTester r;
 
-  for (size_t i = 0; i < ARRAY_SIZE(double_inputs); i++) {
+  for (size_t i = 0; i < arraysize(double_inputs); i++) {
     Node* n = r.jsgraph()->Float64Constant(double_inputs[i]);
     Node* c = r.changer()->GetRepresentationFor(n, kRepFloat64, kRepTagged);
     r.CheckNumberConstant(c, double_inputs[i]);
   }
 
-  for (size_t i = 0; i < ARRAY_SIZE(int32_inputs); i++) {
+  for (size_t i = 0; i < arraysize(int32_inputs); i++) {
     Node* n = r.jsgraph()->Int32Constant(int32_inputs[i]);
     Node* c = r.changer()->GetRepresentationFor(n, kRepWord32 | kTypeInt32,
                                                 kRepTagged);
     r.CheckNumberConstant(c, static_cast<double>(int32_inputs[i]));
   }
 
-  for (size_t i = 0; i < ARRAY_SIZE(uint32_inputs); i++) {
+  for (size_t i = 0; i < arraysize(uint32_inputs); i++) {
     Node* n = r.jsgraph()->Int32Constant(uint32_inputs[i]);
     Node* c = r.changer()->GetRepresentationFor(n, kRepWord32 | kTypeUint32,
                                                 kRepTagged);
@@ -218,9 +222,14 @@ TEST(Nops) {
   RepresentationChangerTester r;
 
   // X -> X is always a nop for any single representation X.
-  for (size_t i = 0; i < ARRAY_SIZE(all_reps); i++) {
+  for (size_t i = 0; i < arraysize(all_reps); i++) {
     r.CheckNop(all_reps[i], all_reps[i]);
   }
+
+  // 32-bit floats.
+  r.CheckNop(kRepFloat32, kRepFloat32);
+  r.CheckNop(kRepFloat32 | kTypeNumber, kRepFloat32);
+  r.CheckNop(kRepFloat32, kRepFloat32 | kTypeNumber);
 
   // 32-bit or 64-bit words can be used as branch conditions (kRepBit).
   r.CheckNop(kRepWord32, kRepBit);
@@ -258,6 +267,12 @@ TEST(TypeErrors) {
   r.CheckTypeError(kRepBit, kRepFloat64);
   r.CheckTypeError(kRepBit | kTypeBool, kRepFloat64);
 
+  // Floats cannot be implicitly converted to/from comparison conditions.
+  r.CheckTypeError(kRepFloat32, kRepBit);
+  r.CheckTypeError(kRepFloat32, kRepBit | kTypeBool);
+  r.CheckTypeError(kRepBit, kRepFloat32);
+  r.CheckTypeError(kRepBit | kTypeBool, kRepFloat32);
+
   // Word64 is internal and shouldn't be implicitly converted.
   r.CheckTypeError(kRepWord64, kRepTagged | kTypeBool);
   r.CheckTypeError(kRepWord64, kRepTagged);
@@ -273,31 +288,18 @@ TEST(TypeErrors) {
   r.CheckTypeError(kRepWord64, kRepWord32 | kTypeUint32);
   r.CheckTypeError(kRepWord32 | kTypeUint32, kRepWord64);
 
-  for (size_t i = 0; i < ARRAY_SIZE(all_reps); i++) {
-    for (size_t j = 0; j < ARRAY_SIZE(all_reps); j++) {
+  for (size_t i = 0; i < arraysize(all_reps); i++) {
+    for (size_t j = 0; j < arraysize(all_reps); j++) {
       if (i == j) continue;
       // Only a single from representation is allowed.
       r.CheckTypeError(all_reps[i] | all_reps[j], kRepTagged);
     }
   }
-}
 
-
-TEST(CompleteMatrix) {
-  // TODO(titzer): test all variants in the matrix.
-  // rB
-  // tBrB
-  // tBrT
-  // rW32
-  // tIrW32
-  // tUrW32
-  // rW64
-  // tIrW64
-  // tUrW64
-  // rF64
-  // tIrF64
-  // tUrF64
-  // tArF64
-  // rT
-  // tArT
+  // TODO(titzer): Float32 representation changes trigger type errors now.
+  // Enforce current behavior to test all paths through representation changer.
+  for (size_t i = 0; i < arraysize(all_reps); i++) {
+    r.CheckTypeError(all_reps[i], kRepFloat32);
+    r.CheckTypeError(kRepFloat32, all_reps[i]);
+  }
 }

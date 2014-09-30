@@ -4,15 +4,16 @@
 
 #include <limits>
 
+#include "src/compiler/change-lowering.h"
 #include "src/compiler/control-builders.h"
 #include "src/compiler/generic-node-inl.h"
+#include "src/compiler/js-graph.h"
 #include "src/compiler/node-properties-inl.h"
 #include "src/compiler/pipeline.h"
-#include "src/compiler/simplified-lowering.h"
-#include "src/compiler/simplified-node-factory.h"
 #include "src/compiler/typer.h"
 #include "src/compiler/verifier.h"
 #include "src/execution.h"
+#include "src/globals.h"
 #include "src/parser.h"
 #include "src/rewriter.h"
 #include "src/scopes.h"
@@ -30,13 +31,14 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
   explicit ChangesLoweringTester(MachineType p0 = kMachNone)
       : GraphBuilderTester<ReturnType>(p0),
         typer(this->zone()),
-        jsgraph(this->graph(), this->common(), &typer),
-        lowering(&jsgraph),
+        javascript(this->zone()),
+        jsgraph(this->graph(), this->common(), &javascript, &typer,
+                this->machine()),
         function(Handle<JSFunction>::null()) {}
 
   Typer typer;
+  JSOperatorBuilder javascript;
   JSGraph jsgraph;
-  SimplifiedLowering lowering;
   Handle<JSFunction> function;
 
   Node* start() { return this->graph()->start(); }
@@ -53,8 +55,6 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
               "(function() { 'use strict'; return 2.7123; })")));
       CompilationInfoWithZone info(function);
       CHECK(Parser::Parse(&info));
-      StrictMode strict_mode = info.function()->strict_mode();
-      info.SetStrictMode(strict_mode);
       info.SetOptimizing(BailoutId::None(), Handle<Code>(function->code()));
       CHECK(Rewriter::Rewrite(&info));
       CHECK(Scope::Analyze(&info));
@@ -100,7 +100,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
     CHECK(this->isolate()->factory()->NewNumber(expected)->SameValue(number));
   }
 
-  void BuildAndLower(Operator* op) {
+  void BuildAndLower(const Operator* op) {
     // We build a graph by hand here, because the raw machine assembler
     // does not add the correct control and effect nodes.
     Node* p0 = this->Parameter(0);
@@ -109,11 +109,11 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
                                        this->start(), this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.LowerChange(change, this->start(), this->start());
-    Verifier::Run(this->graph());
+    LowerChange(change);
   }
 
-  void BuildStoreAndLower(Operator* op, Operator* store_op, void* location) {
+  void BuildStoreAndLower(const Operator* op, const Operator* store_op,
+                          void* location) {
     // We build a graph by hand here, because the raw machine assembler
     // does not add the correct control and effect nodes.
     Node* p0 = this->Parameter(0);
@@ -125,11 +125,11 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
         this->common()->Return(), this->Int32Constant(0), store, this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.LowerChange(change, this->start(), this->start());
-    Verifier::Run(this->graph());
+    LowerChange(change);
   }
 
-  void BuildLoadAndLower(Operator* op, Operator* load_op, void* location) {
+  void BuildLoadAndLower(const Operator* op, const Operator* load_op,
+                         void* location) {
     // We build a graph by hand here, because the raw machine assembler
     // does not add the correct control and effect nodes.
     Node* load =
@@ -140,7 +140,17 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
                                        this->start(), this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.LowerChange(change, this->start(), this->start());
+    LowerChange(change);
+  }
+
+  void LowerChange(Node* change) {
+    // Run the graph reducer with changes lowering on a single node.
+    CompilationInfo info(this->isolate(), this->zone());
+    Linkage linkage(&info);
+    ChangeLowering lowering(&jsgraph, &linkage);
+    GraphReducer reducer(this->graph());
+    reducer.AddReducer(&lowering);
+    reducer.ReduceNode(change);
     Verifier::Run(this->graph());
   }
 
@@ -213,9 +223,10 @@ TEST(RunChangeTaggedToFloat64) {
   ChangesLoweringTester<int32_t> t(kMachAnyTagged);
   double result;
 
-  t.BuildStoreAndLower(t.simplified()->ChangeTaggedToFloat64(),
-                       t.machine()->Store(kMachFloat64, kNoWriteBarrier),
-                       &result);
+  t.BuildStoreAndLower(
+      t.simplified()->ChangeTaggedToFloat64(),
+      t.machine()->Store(StoreRepresentation(kMachFloat64, kNoWriteBarrier)),
+      &result);
 
   if (Pipeline::SupportedTarget()) {
     FOR_INT32_INPUTS(i) {
@@ -295,17 +306,41 @@ TEST(RunChangeBitToBool) {
 }
 
 
-bool TODO_INT32_TO_TAGGED_WILL_WORK(int32_t v) {
-  // TODO(titzer): enable all UI32 -> Tagged checking when inline allocation
-  // works.
-  return Smi::IsValid(v);
+#if V8_TURBOFAN_BACKEND
+// TODO(titzer): disabled on ARM
+
+TEST(RunChangeInt32ToTaggedSmi) {
+  ChangesLoweringTester<Object*> t;
+  int32_t input;
+  t.BuildLoadAndLower(t.simplified()->ChangeInt32ToTagged(),
+                      t.machine()->Load(kMachInt32), &input);
+
+  if (Pipeline::SupportedTarget()) {
+    FOR_INT32_INPUTS(i) {
+      input = *i;
+      if (!Smi::IsValid(input)) continue;
+      Object* result = t.Call();
+      t.CheckNumber(static_cast<double>(input), result);
+    }
+  }
 }
 
 
-bool TODO_UINT32_TO_TAGGED_WILL_WORK(uint32_t v) {
-  // TODO(titzer): enable all UI32 -> Tagged checking when inline allocation
-  // works.
-  return v <= static_cast<uint32_t>(Smi::kMaxValue);
+TEST(RunChangeUint32ToTaggedSmi) {
+  ChangesLoweringTester<Object*> t;
+  uint32_t input;
+  t.BuildLoadAndLower(t.simplified()->ChangeUint32ToTagged(),
+                      t.machine()->Load(kMachUint32), &input);
+
+  if (Pipeline::SupportedTarget()) {
+    FOR_UINT32_INPUTS(i) {
+      input = *i;
+      if (input > static_cast<uint32_t>(Smi::kMaxValue)) continue;
+      Object* result = t.Call();
+      double expected = static_cast<double>(input);
+      t.CheckNumber(expected, result);
+    }
+  }
 }
 
 
@@ -316,21 +351,14 @@ TEST(RunChangeInt32ToTagged) {
                       t.machine()->Load(kMachInt32), &input);
 
   if (Pipeline::SupportedTarget()) {
-    FOR_INT32_INPUTS(i) {
-      input = *i;
-      Object* result = t.CallWithPotentialGC<Object>();
-      if (TODO_INT32_TO_TAGGED_WILL_WORK(input)) {
-        t.CheckNumber(static_cast<double>(input), result);
-      }
-    }
-  }
+    for (int m = 0; m < 3; m++) {  // Try 3 GC modes.
+      FOR_INT32_INPUTS(i) {
+        if (m == 0) CcTest::heap()->EnableInlineAllocation();
+        if (m == 1) CcTest::heap()->DisableInlineAllocation();
+        if (m == 2) SimulateFullSpace(CcTest::heap()->new_space());
 
-  if (Pipeline::SupportedTarget()) {
-    FOR_INT32_INPUTS(i) {
-      input = *i;
-      SimulateFullSpace(CcTest::heap()->new_space());
-      Object* result = t.CallWithPotentialGC<Object>();
-      if (TODO_INT32_TO_TAGGED_WILL_WORK(input)) {
+        input = *i;
+        Object* result = t.CallWithPotentialGC<Object>();
         t.CheckNumber(static_cast<double>(input), result);
       }
     }
@@ -345,32 +373,21 @@ TEST(RunChangeUint32ToTagged) {
                       t.machine()->Load(kMachUint32), &input);
 
   if (Pipeline::SupportedTarget()) {
-    FOR_UINT32_INPUTS(i) {
-      input = *i;
-      Object* result = t.CallWithPotentialGC<Object>();
-      double expected = static_cast<double>(input);
-      if (TODO_UINT32_TO_TAGGED_WILL_WORK(input)) {
-        t.CheckNumber(expected, result);
-      }
-    }
-  }
+    for (int m = 0; m < 3; m++) {  // Try 3 GC modes.
+      FOR_UINT32_INPUTS(i) {
+        if (m == 0) CcTest::heap()->EnableInlineAllocation();
+        if (m == 1) CcTest::heap()->DisableInlineAllocation();
+        if (m == 2) SimulateFullSpace(CcTest::heap()->new_space());
 
-  if (Pipeline::SupportedTarget()) {
-    FOR_UINT32_INPUTS(i) {
-      input = *i;
-      SimulateFullSpace(CcTest::heap()->new_space());
-      Object* result = t.CallWithPotentialGC<Object>();
-      double expected = static_cast<double>(static_cast<uint32_t>(input));
-      if (TODO_UINT32_TO_TAGGED_WILL_WORK(input)) {
+        input = *i;
+        Object* result = t.CallWithPotentialGC<Object>();
+        double expected = static_cast<double>(input);
         t.CheckNumber(expected, result);
       }
     }
   }
 }
 
-
-// TODO(titzer): lowering of Float64->Tagged needs inline allocation.
-#define TODO_FLOAT64_TO_TAGGED false
 
 TEST(RunChangeFloat64ToTagged) {
   ChangesLoweringTester<Object*> t;
@@ -378,21 +395,19 @@ TEST(RunChangeFloat64ToTagged) {
   t.BuildLoadAndLower(t.simplified()->ChangeFloat64ToTagged(),
                       t.machine()->Load(kMachFloat64), &input);
 
-  // TODO(titzer): need inline allocation to change float to tagged.
-  if (TODO_FLOAT64_TO_TAGGED && Pipeline::SupportedTarget()) {
-    FOR_FLOAT64_INPUTS(i) {
-      input = *i;
-      Object* result = t.CallWithPotentialGC<Object>();
-      t.CheckNumber(input, result);
-    }
-  }
+  if (Pipeline::SupportedTarget()) {
+    for (int m = 0; m < 3; m++) {  // Try 3 GC modes.
+      FOR_FLOAT64_INPUTS(i) {
+        if (m == 0) CcTest::heap()->EnableInlineAllocation();
+        if (m == 1) CcTest::heap()->DisableInlineAllocation();
+        if (m == 2) SimulateFullSpace(CcTest::heap()->new_space());
 
-  if (TODO_FLOAT64_TO_TAGGED && Pipeline::SupportedTarget()) {
-    FOR_FLOAT64_INPUTS(i) {
-      input = *i;
-      SimulateFullSpace(CcTest::heap()->new_space());
-      Object* result = t.CallWithPotentialGC<Object>();
-      t.CheckNumber(input, result);
+        input = *i;
+        Object* result = t.CallWithPotentialGC<Object>();
+        t.CheckNumber(input, result);
+      }
     }
   }
 }
+
+#endif  // V8_TURBOFAN_BACKEND

@@ -5,6 +5,7 @@
 #ifndef V8_COMPILER_REPRESENTATION_CHANGE_H_
 #define V8_COMPILER_REPRESENTATION_CHANGE_H_
 
+#include "src/base/bits.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-properties-inl.h"
@@ -20,10 +21,9 @@ namespace compiler {
 class RepresentationChanger {
  public:
   RepresentationChanger(JSGraph* jsgraph, SimplifiedOperatorBuilder* simplified,
-                        MachineOperatorBuilder* machine, Isolate* isolate)
+                        Isolate* isolate)
       : jsgraph_(jsgraph),
         simplified_(simplified),
-        machine_(machine),
         isolate_(isolate),
         testing_type_errors_(false),
         type_error_(false) {}
@@ -34,7 +34,7 @@ class RepresentationChanger {
 
   Node* GetRepresentationFor(Node* node, MachineTypeUnion output_type,
                              MachineTypeUnion use_type) {
-    if (!IsPowerOf2(output_type & kRepMask)) {
+    if (!base::bits::IsPowerOfTwo32(output_type & kRepMask)) {
       // There should be only one output representation.
       return TypeError(node, output_type, use_type);
     }
@@ -53,6 +53,8 @@ class RepresentationChanger {
       return GetTaggedRepresentationFor(node, output_type);
     } else if (use_type & kRepFloat64) {
       return GetFloat64RepresentationFor(node, output_type);
+    } else if (use_type & kRepFloat32) {
+      return TypeError(node, output_type, use_type);  // TODO(titzer): handle
     } else if (use_type & kRepBit) {
       return GetBitRepresentationFor(node, output_type);
     } else if (use_type & rWord) {
@@ -73,24 +75,24 @@ class RepresentationChanger {
         return node;  // No change necessary.
       case IrOpcode::kInt32Constant:
         if (output_type & kTypeUint32) {
-          uint32_t value = ValueOf<uint32_t>(node->op());
+          uint32_t value = OpParameter<uint32_t>(node);
           return jsgraph()->Constant(static_cast<double>(value));
         } else if (output_type & kTypeInt32) {
-          int32_t value = ValueOf<int32_t>(node->op());
+          int32_t value = OpParameter<int32_t>(node);
           return jsgraph()->Constant(value);
         } else if (output_type & kRepBit) {
-          return ValueOf<int32_t>(node->op()) == 0 ? jsgraph()->FalseConstant()
-                                                   : jsgraph()->TrueConstant();
+          return OpParameter<int32_t>(node) == 0 ? jsgraph()->FalseConstant()
+                                                 : jsgraph()->TrueConstant();
         } else {
           return TypeError(node, output_type, kRepTagged);
         }
       case IrOpcode::kFloat64Constant:
-        return jsgraph()->Constant(ValueOf<double>(node->op()));
+        return jsgraph()->Constant(OpParameter<double>(node));
       default:
         break;
     }
     // Select the correct X -> Tagged operator.
-    Operator* op;
+    const Operator* op;
     if (output_type & kRepBit) {
       op = simplified()->ChangeBitToBool();
     } else if (output_type & rWord) {
@@ -113,13 +115,13 @@ class RepresentationChanger {
     // Eagerly fold representation changes for constants.
     switch (node->opcode()) {
       case IrOpcode::kNumberConstant:
-        return jsgraph()->Float64Constant(ValueOf<double>(node->op()));
+        return jsgraph()->Float64Constant(OpParameter<double>(node));
       case IrOpcode::kInt32Constant:
         if (output_type & kTypeUint32) {
-          uint32_t value = ValueOf<uint32_t>(node->op());
+          uint32_t value = OpParameter<uint32_t>(node);
           return jsgraph()->Float64Constant(static_cast<double>(value));
         } else {
-          int32_t value = ValueOf<int32_t>(node->op());
+          int32_t value = OpParameter<int32_t>(node);
           return jsgraph()->Float64Constant(value);
         }
       case IrOpcode::kFloat64Constant:
@@ -128,7 +130,7 @@ class RepresentationChanger {
         break;
     }
     // Select the correct X -> Float64 operator.
-    Operator* op;
+    const Operator* op;
     if (output_type & kRepBit) {
       return TypeError(node, output_type, kRepFloat64);
     } else if (output_type & rWord) {
@@ -153,7 +155,7 @@ class RepresentationChanger {
         return node;  // No change necessary.
       case IrOpcode::kNumberConstant:
       case IrOpcode::kFloat64Constant: {
-        double value = ValueOf<double>(node->op());
+        double value = OpParameter<double>(node);
         if (value < 0) {
           DCHECK(IsInt32Double(value));
           int32_t iv = static_cast<int32_t>(value);
@@ -168,7 +170,7 @@ class RepresentationChanger {
         break;
     }
     // Select the correct X -> Word32 operator.
-    Operator* op = NULL;
+    const Operator* op = NULL;
     if (output_type & kRepFloat64) {
       if (output_type & kTypeUint32 || use_unsigned) {
         op = machine()->ChangeFloat64ToUint32();
@@ -191,12 +193,12 @@ class RepresentationChanger {
     // Eagerly fold representation changes for constants.
     switch (node->opcode()) {
       case IrOpcode::kInt32Constant: {
-        int32_t value = ValueOf<int32_t>(node->op());
+        int32_t value = OpParameter<int32_t>(node);
         if (value == 0 || value == 1) return node;
         return jsgraph()->OneConstant();  // value != 0
       }
       case IrOpcode::kHeapConstant: {
-        Handle<Object> handle = ValueOf<Handle<Object> >(node->op());
+        Handle<Object> handle = OpParameter<Unique<Object> >(node).handle();
         DCHECK(*handle == isolate()->heap()->true_value() ||
                *handle == isolate()->heap()->false_value());
         return jsgraph()->Int32Constant(
@@ -206,7 +208,7 @@ class RepresentationChanger {
         break;
     }
     // Select the correct X -> Bit operator.
-    Operator* op;
+    const Operator* op;
     if (output_type & rWord) {
       return node;  // No change necessary.
     } else if (output_type & kRepWord64) {
@@ -227,12 +229,18 @@ class RepresentationChanger {
     return TypeError(node, output_type, kRepWord64);
   }
 
-  Operator* Int32OperatorFor(IrOpcode::Value opcode) {
+  const Operator* Int32OperatorFor(IrOpcode::Value opcode) {
     switch (opcode) {
       case IrOpcode::kNumberAdd:
         return machine()->Int32Add();
       case IrOpcode::kNumberSubtract:
         return machine()->Int32Sub();
+      case IrOpcode::kNumberMultiply:
+        return machine()->Int32Mul();
+      case IrOpcode::kNumberDivide:
+        return machine()->Int32Div();
+      case IrOpcode::kNumberModulus:
+        return machine()->Int32Mod();
       case IrOpcode::kNumberEqual:
         return machine()->Word32Equal();
       case IrOpcode::kNumberLessThan:
@@ -245,12 +253,18 @@ class RepresentationChanger {
     }
   }
 
-  Operator* Uint32OperatorFor(IrOpcode::Value opcode) {
+  const Operator* Uint32OperatorFor(IrOpcode::Value opcode) {
     switch (opcode) {
       case IrOpcode::kNumberAdd:
         return machine()->Int32Add();
       case IrOpcode::kNumberSubtract:
         return machine()->Int32Sub();
+      case IrOpcode::kNumberMultiply:
+        return machine()->Int32Mul();
+      case IrOpcode::kNumberDivide:
+        return machine()->Int32UDiv();
+      case IrOpcode::kNumberModulus:
+        return machine()->Int32UMod();
       case IrOpcode::kNumberEqual:
         return machine()->Word32Equal();
       case IrOpcode::kNumberLessThan:
@@ -263,7 +277,7 @@ class RepresentationChanger {
     }
   }
 
-  Operator* Float64OperatorFor(IrOpcode::Value opcode) {
+  const Operator* Float64OperatorFor(IrOpcode::Value opcode) {
     switch (opcode) {
       case IrOpcode::kNumberAdd:
         return machine()->Float64Add();
@@ -308,7 +322,6 @@ class RepresentationChanger {
  private:
   JSGraph* jsgraph_;
   SimplifiedOperatorBuilder* simplified_;
-  MachineOperatorBuilder* machine_;
   Isolate* isolate_;
 
   friend class RepresentationChangerTester;  // accesses the below fields.
@@ -338,7 +351,7 @@ class RepresentationChanger {
   JSGraph* jsgraph() { return jsgraph_; }
   Isolate* isolate() { return isolate_; }
   SimplifiedOperatorBuilder* simplified() { return simplified_; }
-  MachineOperatorBuilder* machine() { return machine_; }
+  MachineOperatorBuilder* machine() { return jsgraph()->machine(); }
 };
 }
 }

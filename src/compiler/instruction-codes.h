@@ -29,7 +29,8 @@ namespace compiler {
 // Target-specific opcodes that specify which assembly sequence to emit.
 // Most opcodes specify a single instruction.
 #define ARCH_OPCODE_LIST(V) \
-  V(ArchDeoptimize)         \
+  V(ArchCallCodeObject)     \
+  V(ArchCallJSFunction)     \
   V(ArchJmp)                \
   V(ArchNop)                \
   V(ArchRet)                \
