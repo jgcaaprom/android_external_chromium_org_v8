@@ -180,8 +180,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-DNDEBUG' \
 	'-DNVALGRIND' \
-	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
-	'-DENABLE_HANDLE_ZAPPING'
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0'
 
 
 # Include paths placed before CFLAGS/CPPFLAGS
@@ -233,6 +232,9 @@ LOCAL_STATIC_LIBRARIES := \
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true
+### Set directly by aosp_build_settings.
+LOCAL_CLANG := true
+
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
 gyp_all_modules: v8_tools_gyp_mksnapshot_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
