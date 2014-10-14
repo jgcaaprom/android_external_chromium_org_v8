@@ -45,6 +45,9 @@ GYP_GENERATED_OUTPUTS := \
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
 
 ### Rules for final target.
+### Set directly by aosp_build_settings.
+LOCAL_CLANG := true
+
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
 gyp_all_modules: v8_tools_gyp_js2c_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
