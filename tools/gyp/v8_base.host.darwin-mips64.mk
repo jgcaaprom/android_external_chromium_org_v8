@@ -219,29 +219,29 @@ LOCAL_SRC_FILES := \
 	v8/src/version.cc \
 	v8/src/zone.cc \
 	v8/third_party/fdlibm/fdlibm.cc \
-	v8/src/mips/assembler-mips.cc \
-	v8/src/mips/builtins-mips.cc \
-	v8/src/mips/codegen-mips.cc \
-	v8/src/mips/code-stubs-mips.cc \
-	v8/src/mips/constants-mips.cc \
-	v8/src/mips/cpu-mips.cc \
-	v8/src/mips/debug-mips.cc \
-	v8/src/mips/deoptimizer-mips.cc \
-	v8/src/mips/disasm-mips.cc \
-	v8/src/mips/frames-mips.cc \
-	v8/src/mips/full-codegen-mips.cc \
-	v8/src/mips/interface-descriptors-mips.cc \
-	v8/src/mips/lithium-codegen-mips.cc \
-	v8/src/mips/lithium-gap-resolver-mips.cc \
-	v8/src/mips/lithium-mips.cc \
-	v8/src/mips/macro-assembler-mips.cc \
-	v8/src/mips/regexp-macro-assembler-mips.cc \
-	v8/src/mips/simulator-mips.cc \
-	v8/src/ic/mips/access-compiler-mips.cc \
-	v8/src/ic/mips/handler-compiler-mips.cc \
-	v8/src/ic/mips/ic-mips.cc \
-	v8/src/ic/mips/ic-compiler-mips.cc \
-	v8/src/ic/mips/stub-cache-mips.cc
+	v8/src/mips64/assembler-mips64.cc \
+	v8/src/mips64/builtins-mips64.cc \
+	v8/src/mips64/codegen-mips64.cc \
+	v8/src/mips64/code-stubs-mips64.cc \
+	v8/src/mips64/constants-mips64.cc \
+	v8/src/mips64/cpu-mips64.cc \
+	v8/src/mips64/debug-mips64.cc \
+	v8/src/mips64/deoptimizer-mips64.cc \
+	v8/src/mips64/disasm-mips64.cc \
+	v8/src/mips64/frames-mips64.cc \
+	v8/src/mips64/full-codegen-mips64.cc \
+	v8/src/mips64/interface-descriptors-mips64.cc \
+	v8/src/mips64/lithium-codegen-mips64.cc \
+	v8/src/mips64/lithium-gap-resolver-mips64.cc \
+	v8/src/mips64/lithium-mips64.cc \
+	v8/src/mips64/macro-assembler-mips64.cc \
+	v8/src/mips64/regexp-macro-assembler-mips64.cc \
+	v8/src/mips64/simulator-mips64.cc \
+	v8/src/ic/mips64/access-compiler-mips64.cc \
+	v8/src/ic/mips64/handler-compiler-mips64.cc \
+	v8/src/ic/mips64/ic-mips64.cc \
+	v8/src/ic/mips64/ic-compiler-mips64.cc \
+	v8/src/ic/mips64/stub-cache-mips64.cc
 
 
 # Flags passed to both C and C++ files.
@@ -265,7 +265,6 @@ MY_CFLAGS_Debug := \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
 	-Wno-unused-local-typedef \
-	-m32 \
 	-Os \
 	-g \
 	-gdwarf-4 \
@@ -299,10 +298,10 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
-	'-DV8_TARGET_ARCH_MIPS' \
+	'-DV8_TARGET_ARCH_MIPS64' \
 	'-DCAN_USE_FPU_INSTRUCTIONS' \
 	'-D__mips_hard_float=1' \
-	'-D_MIPS_ARCH_MIPS32R2' \
+	'-D_MIPS_ARCH_MIPS64R2' \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \
@@ -360,7 +359,6 @@ MY_CFLAGS_Release := \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
 	-Wno-unused-local-typedef \
-	-m32 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -395,10 +393,10 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
-	'-DV8_TARGET_ARCH_MIPS' \
+	'-DV8_TARGET_ARCH_MIPS64' \
 	'-DCAN_USE_FPU_INSTRUCTIONS' \
 	'-D__mips_hard_float=1' \
-	'-D_MIPS_ARCH_MIPS32R2' \
+	'-D_MIPS_ARCH_MIPS64R2' \
 	'-DV8_I18N_SUPPORT' \
 	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DU_USING_ICU_NAMESPACE=0' \

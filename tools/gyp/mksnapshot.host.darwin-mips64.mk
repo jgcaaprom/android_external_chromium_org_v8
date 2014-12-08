@@ -57,7 +57,6 @@ MY_CFLAGS_Debug := \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
 	-Wno-unused-local-typedef \
-	-m32 \
 	-Os \
 	-g \
 	-gdwarf-4 \
@@ -91,10 +90,10 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
-	'-DV8_TARGET_ARCH_MIPS' \
+	'-DV8_TARGET_ARCH_MIPS64' \
 	'-DCAN_USE_FPU_INSTRUCTIONS' \
 	'-D__mips_hard_float=1' \
-	'-D_MIPS_ARCH_MIPS32R2' \
+	'-D_MIPS_ARCH_MIPS64R2' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -146,7 +145,6 @@ MY_CFLAGS_Release := \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
 	-Wno-unused-local-typedef \
-	-m32 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -181,10 +179,10 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
-	'-DV8_TARGET_ARCH_MIPS' \
+	'-DV8_TARGET_ARCH_MIPS64' \
 	'-DCAN_USE_FPU_INSTRUCTIONS' \
 	'-D__mips_hard_float=1' \
-	'-D_MIPS_ARCH_MIPS32R2' \
+	'-D_MIPS_ARCH_MIPS64R2' \
 	'-DV8_I18N_SUPPORT' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -218,19 +216,13 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
 	-pthread \
-	-fPIC \
-	-m32
+	-fPIC
 
 
 LOCAL_LDFLAGS_Release := \
-	-Wl,-z,now \
-	-Wl,-z,relro \
 	-pthread \
-	-fPIC \
-	-m32
+	-fPIC
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
