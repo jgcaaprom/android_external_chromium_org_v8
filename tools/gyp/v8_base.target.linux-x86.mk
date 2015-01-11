@@ -229,7 +229,7 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-Os \
+	-w -O3 \
 	-g \
 	-fdata-sections \
 	-ffunction-sections \
@@ -348,7 +348,7 @@ MY_CFLAGS_Release := \
 	-funwind-tables \
 	-fdata-sections \
 	-ffunction-sections \
-	-O2
+	-w -O3
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
