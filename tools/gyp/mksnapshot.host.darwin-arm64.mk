@@ -208,13 +208,13 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-pthread \
+	-Wl,-lstdc++ \
 	-fPIC \
 	-m64
 
 
 LOCAL_LDFLAGS_Release := \
-	-pthread \
+	-Wl,-lstdc++ \
 	-fPIC \
 	-m64
 
