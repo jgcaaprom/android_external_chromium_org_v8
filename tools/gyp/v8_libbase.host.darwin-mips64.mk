@@ -61,7 +61,7 @@ MY_CFLAGS_Debug := \
 	-Wno-c++11-narrowing \
 	-Wno-deprecated-register \
 	-Wno-unused-local-typedef \
-	-Os \
+	-w -O3 \
 	-g \
 	-gdwarf-4 \
 	-fdata-sections \

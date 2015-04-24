@@ -266,7 +266,7 @@ MY_CFLAGS_Debug := \
 	-Wno-deprecated-register \
 	-Wno-unused-local-typedef \
 	-m32 \
-	-Os \
+	-w -O3 \
 	-g \
 	-gdwarf-4 \
 	-fdata-sections \

@@ -71,7 +71,7 @@ MY_CFLAGS_Debug := \
 	-Wno-return-type \
 	-Wno-sequence-point \
 	-m32 \
-	-Os \
+	-w -O3 \
 	-g \
 	-gdwarf-4 \
 	-fdata-sections \
